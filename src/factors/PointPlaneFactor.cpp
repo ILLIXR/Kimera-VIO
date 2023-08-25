@@ -12,9 +12,11 @@
  *  Created on: Feb 20, 2018
  *      Author: Antoni Rosinol
  */
-
+#ifdef USING_GTSAM4
+#include <memory>
+#endif
 #include "kimera-vio/factors/PointPlaneFactor.h"
-
+#include "kimera-vio/definitions.h"
 using namespace std;
 
 namespace gtsam {
@@ -28,7 +30,7 @@ void PointPlaneFactor::print(const string& s,
 }
 
 gtsam::NonlinearFactor::shared_ptr PointPlaneFactor::clone() const {
-  return boost::static_pointer_cast<gtsam::NonlinearFactor>(
+  return AUTOP::static_pointer_cast<gtsam::NonlinearFactor>(
       gtsam::NonlinearFactor::shared_ptr(new PointPlaneFactor(*this)));
 }
 

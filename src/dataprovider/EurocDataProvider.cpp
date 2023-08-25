@@ -368,7 +368,16 @@ bool EurocDataProvider::parseGtData(const std::string& input_dataset_path,
         gt_data_raw[3], gt_data_raw[4], gt_data_raw[5], gt_data_raw[6]);
 
     // Sanity check.
+#ifdef USING_GTSAM4
+    auto qt = rot.toQuaternion();
+    gtsam::Vector q(4);
+    q(0) = qt.w();
+    q(1) = qt.x();
+    q(2) = qt.y();
+    q(3) = qt.z();
+#else
     gtsam::Vector q = rot.quaternion();
+#endif
     // Figure out sign for quaternion.
     if (std::fabs(q(0) + gt_data_raw[3]) < std::fabs(q(0) - gt_data_raw[3])) {
       q = -q;

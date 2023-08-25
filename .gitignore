@@ -33,3 +33,6 @@ common
 % Ignore objects
 *.dbg.so
 *.opt.so
+
+.idea
+cmake-build*

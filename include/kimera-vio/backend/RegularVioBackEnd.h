@@ -69,7 +69,7 @@ class RegularVioBackEnd : public VioBackEnd {
   // For Stereo and Projection factors.
   gtsam::SharedNoiseModel stereo_noise_;
   gtsam::SharedNoiseModel mono_noise_;
-  boost::shared_ptr<Cal3_S2> mono_cal_;
+  AUTOP::shared_ptr<Cal3_S2> mono_cal_;
 
   // For regularity factors.
   gtsam::SharedNoiseModel point_plane_regularity_noise_;

@@ -34,6 +34,9 @@
 #include <string>
 #include <utility>  // for make_pair
 #include <vector>
+#ifdef USING_GTSAM4
+#include <memory>
+#endif
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -43,6 +46,7 @@
 #include "kimera-vio/utils/Statistics.h"
 #include "kimera-vio/utils/Timer.h"
 #include "kimera-vio/utils/UtilsNumerical.h"
+#include "kimera-vio/definitions.h"
 
 DEFINE_bool(debug_graph_before_opt,
             false,
@@ -408,7 +412,7 @@ void VioBackEnd::addLandmarkToGraph(const LandmarkId& lmk_id,
   // We use a unit pinhole projection camera for the smart factors to be
   // more efficient.
   SmartStereoFactor::shared_ptr new_factor =
-      boost::make_shared<SmartStereoFactor>(
+      AUTOP::make_shared<SmartStereoFactor>(
           smart_noise_, smart_factors_params_, B_Pose_leftCam_);
 
   VLOG(10) << "Adding landmark with: " << ft.obs_.size()
@@ -451,7 +455,7 @@ void VioBackEnd::updateLandmarkInGraph(
       old_smart_factors_it->second.first;
   // Clone old factor to keep all previous measurements, now append one.
   SmartStereoFactor::shared_ptr new_factor =
-      boost::make_shared<SmartStereoFactor>(*old_factor);
+      AUTOP::make_shared<SmartStereoFactor>(*old_factor);
   gtsam::Symbol pose_symbol('x', new_measurement.first);
   if (smoother_->getFactors().exists(pose_symbol)) {
     const StereoPoint2& measurement = new_measurement.second;
@@ -564,8 +568,8 @@ PointsWithIdMap VioBackEnd::getMapLmkIdsTo3dPointsInTimeHorizon(
     // such as the triangulated point, whether it is valid or not
     // and the number of observations...
     // Is graph more up to date?
-    boost::shared_ptr<SmartStereoFactor> gsf =
-        boost::dynamic_pointer_cast<SmartStereoFactor>(graph.at(slot_id));
+    AUTOP::shared_ptr<SmartStereoFactor> gsf =
+        AUTOP::dynamic_pointer_cast<SmartStereoFactor>(graph.at(slot_id));
     CHECK(gsf) << "Cannot cast factor in graph to a smart stereo factor.";
 
     // Get triangulation result from smart factor.
@@ -573,7 +577,11 @@ PointsWithIdMap VioBackEnd::getMapLmkIdsTo3dPointsInTimeHorizon(
     // Check that the boost::optional result is initialized.
     // Otherwise we will be dereferencing a nullptr and we will head
     // directly to undefined behaviour wonderland.
+#ifdef USING_GTSAM4
+    if (result.has_value()) {
+#else
     if (result.is_initialized()) {
+#endif
       if (result.valid()) {
         if (gsf->measured().size() >= min_age) {
           // Triangulation result from smart factor is valid and
@@ -610,12 +618,21 @@ PointsWithIdMap VioBackEnd::getMapLmkIdsTo3dPointsInTimeHorizon(
 
   // Step 2:
   ////////////// Add landmarks that now are in projection factors. /////////////
+#ifdef USING_GTSAM4
+  for (const std::pair<Key, gtsam::Vector>&
+           key_value : state_.extract<gtsam::Vector>(gtsam::Symbol::ChrTest('l'))) {
+    DCHECK_EQ(gtsam::Symbol(key_value.first).chr(), 'l');
+    const LandmarkId& lmk_id = gtsam::Symbol(key_value.first).index();
+    DCHECK(points_with_id.find(lmk_id) == points_with_id.end());
+    points_with_id[lmk_id] = key_value.second;
+#else
   for (const gtsam::Values::Filtered<gtsam::Value>::ConstKeyValuePair&
            key_value : state_.filter(gtsam::Symbol::ChrTest('l'))) {
     DCHECK_EQ(gtsam::Symbol(key_value.key).chr(), 'l');
     const LandmarkId& lmk_id = gtsam::Symbol(key_value.key).index();
     DCHECK(points_with_id.find(lmk_id) == points_with_id.end());
     points_with_id[lmk_id] = key_value.value.cast<gtsam::Point3>();
+#endif
     if (lmk_id_to_lmk_type_map) {
       (*lmk_id_to_lmk_type_map)[lmk_id] = LandmarkType::PROJECTION;
     }
@@ -752,7 +769,7 @@ void VioBackEnd::addImuFactor(const FrameId& from_id,
   switch (imu_params_.imu_preintegration_type_) {
     case ImuPreintegrationType::kPreintegratedCombinedMeasurements: {
       new_imu_prior_and_other_factors_.push_back(
-          boost::make_shared<gtsam::CombinedImuFactor>(
+          AUTOP::make_shared<gtsam::CombinedImuFactor>(
               gtsam::Symbol('x', from_id),
               gtsam::Symbol('v', from_id),
               gtsam::Symbol('x', to_id),
@@ -764,7 +781,7 @@ void VioBackEnd::addImuFactor(const FrameId& from_id,
     }
     case ImuPreintegrationType::kPreintegratedImuMeasurements: {
       new_imu_prior_and_other_factors_.push_back(
-          boost::make_shared<gtsam::ImuFactor>(
+          AUTOP::make_shared<gtsam::ImuFactor>(
               gtsam::Symbol('x', from_id),
               gtsam::Symbol('v', from_id),
               gtsam::Symbol('x', to_id),
@@ -789,7 +806,7 @@ void VioBackEnd::addImuFactor(const FrameId& from_id,
           gtsam::noiseModel::Diagonal::Sigmas(biasSigmas);
 
       new_imu_prior_and_other_factors_.push_back(
-          boost::make_shared<
+          AUTOP::make_shared<
               gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>>(
               gtsam::Symbol('b', from_id),
               gtsam::Symbol('b', to_id),
@@ -820,7 +837,7 @@ void VioBackEnd::addBetweenFactor(const FrameId& from_id,
       gtsam::noiseModel::Diagonal::Precisions(precisions);
 
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::BetweenFactor<gtsam::Pose3>>(
+      AUTOP::make_shared<gtsam::BetweenFactor<gtsam::Pose3>>(
           gtsam::Symbol('x', from_id),
           gtsam::Symbol('x', to_id),
           from_id_POSE_to_id,
@@ -833,7 +850,7 @@ void VioBackEnd::addBetweenFactor(const FrameId& from_id,
 void VioBackEnd::addNoMotionFactor(const FrameId& from_id,
                                    const FrameId& to_id) {
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::BetweenFactor<gtsam::Pose3>>(
+      AUTOP::make_shared<gtsam::BetweenFactor<gtsam::Pose3>>(
           gtsam::Symbol('x', from_id),
           gtsam::Symbol('x', to_id),
           Pose3(),
@@ -851,7 +868,7 @@ void VioBackEnd::addNoMotionFactor(const FrameId& from_id,
 void VioBackEnd::addZeroVelocityPrior(const FrameId& frame_id) {
   VLOG(10) << "No motion detected, adding zero velocity prior.";
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::PriorFactor<gtsam::Vector3>>(
+      AUTOP::make_shared<gtsam::PriorFactor<gtsam::Vector3>>(
           gtsam::Symbol('v', frame_id),
           gtsam::Vector3::Zero(),
           zero_velocity_prior_noise_));
@@ -960,8 +977,12 @@ bool VioBackEnd::optimize(
   if (VLOG_IS_ON(10)) {
     // Get state before optimization to compute error.
     debug_info_.stateBeforeOpt = gtsam::Values(state_);
-    BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair& key_value,
+#ifdef USING_GTSAM4
+    for (auto key_value : new_values_) {
+#else
+    BOOST_FOREACH (const std::pair& key_value,
                    new_values_) {
+#endif
       debug_info_.stateBeforeOpt.insert(key_value.key, key_value.value);
     }
   }
@@ -993,8 +1014,12 @@ bool VioBackEnd::optimize(
   std::map<Key, double> timestamps;
   // Also needs to convert to seconds...
   double timestamp_kf = static_cast<double>(timestamp_kf_nsec) * 1e-9;
+#ifdef USING_GTSAM4
+  for (auto key_value : new_values_) {
+#else
   BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair& key_value,
                  new_values_) {
+#endif
     timestamps[key_value.key] =
         timestamp_kf;  // for the latest pose, velocity, and bias
   }
@@ -1121,7 +1146,7 @@ void VioBackEnd::addInitialPriorFactors(const FrameId& frame_id) {
   gtsam::SharedNoiseModel noise_init_pose =
       gtsam::noiseModel::Gaussian::Covariance(pose_prior_covariance);
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::PriorFactor<gtsam::Pose3>>(
+      AUTOP::make_shared<gtsam::PriorFactor<gtsam::Pose3>>(
           gtsam::Symbol('x', frame_id), W_Pose_B_lkf_, noise_init_pose));
 
   // Add initial velocity priors.
@@ -1130,7 +1155,7 @@ void VioBackEnd::addInitialPriorFactors(const FrameId& frame_id) {
       gtsam::noiseModel::Isotropic::Sigma(
           3, backend_params_.initialVelocitySigma_);
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::PriorFactor<gtsam::Vector3>>(
+      AUTOP::make_shared<gtsam::PriorFactor<gtsam::Vector3>>(
           gtsam::Symbol('v', frame_id), W_Vel_B_lkf_, noise_init_vel_prior));
 
   // Add initial bias priors:
@@ -1145,7 +1170,7 @@ void VioBackEnd::addInitialPriorFactors(const FrameId& frame_id) {
     imu_bias_lkf_.print();
   }
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::PriorFactor<gtsam::imuBias::ConstantBias>>(
+      AUTOP::make_shared<gtsam::PriorFactor<gtsam::imuBias::ConstantBias>>(
           gtsam::Symbol('b', frame_id), imu_bias_lkf_, imu_bias_prior_noise));
 
   VLOG(2) << "Added initial priors for frame " << frame_id;
@@ -1156,7 +1181,7 @@ void VioBackEnd::addConstantVelocityFactor(const FrameId& from_id,
                                            const FrameId& to_id) {
   VLOG(10) << "Adding constant velocity factor.";
   new_imu_prior_and_other_factors_.push_back(
-      boost::make_shared<gtsam::BetweenFactor<gtsam::Vector3>>(
+      AUTOP::make_shared<gtsam::BetweenFactor<gtsam::Vector3>>(
           gtsam::Symbol('v', from_id),
           gtsam::Symbol('v', to_id),
           gtsam::Vector3::Zero(),
@@ -1478,12 +1503,12 @@ void VioBackEnd::updateNewSmartFactorsSlots(
         << "Trying to access unavailable factor.";
     // CHECK that the factor in the graph at slot position is a smart
     // factor.
-    DCHECK(boost::dynamic_pointer_cast<SmartStereoFactor>(
+    DCHECK(AUTOP::dynamic_pointer_cast<SmartStereoFactor>(
         smoother_->getFactors().at(slot)));
     // CHECK that shared ptrs point to the same smart factor.
     // make sure no one is cloning SmartSteroFactors.
     DCHECK_EQ(it->second.first,
-              boost::dynamic_pointer_cast<SmartStereoFactor>(
+              AUTOP::dynamic_pointer_cast<SmartStereoFactor>(
                   smoother_->getFactors().at(slot)))
         << "Non-matching addresses for same factors for lmk with id: "
         << lmk_ids_of_new_smart_factors.at(i) << " in old_smart_factors_ "
@@ -1533,12 +1558,20 @@ void VioBackEnd::setIsam2Params(const BackendParams& vio_params,
 
   // TODO (Toni): remove hardcoded
   // Cache Linearized Factors seems to improve performance.
+#ifdef USING_GTSAM4
+  isam_param->cacheLinearizedFactors = true;
+#else
   isam_param->setCacheLinearizedFactors(true);
+#endif
   isam_param->relinearizeThreshold = vio_params.relinearizeThreshold_;
   isam_param->relinearizeSkip = vio_params.relinearizeSkip_;
   isam_param->findUnusedFactorSlots = true;
   // isam_param->enablePartialRelinearizationCheck = true;
+#ifdef USING_GTSAM4
+  isam_param->evaluateNonlinearError = false;  // only for debugging
+#else
   isam_param->setEvaluateNonlinearError(false);  // only for debugging
+#endif
   isam_param->enableDetailedResults = false;     // only for debugging.
   isam_param->factorization = gtsam::ISAM2Params::CHOLESKY;  // QR
 }
@@ -1740,7 +1773,11 @@ void VioBackEnd::printSmootherInfo(
   //////////////////////// Print all values in state. ////////////////////////
   LOG(INFO) << "Nr of values in state_ : " << state_.size() << ", with keys:";
   std::cout << "[\n\t";
-  BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair& key_value, state_) {
+#ifdef USING_GTSAM4
+  for (auto key_value : state_) {
+#else
+  //BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair& key_value, state_) {
+#endif
     std::cout << gtsam::DefaultKeyFormatter(key_value.key) << " ";
   }
   std::cout << std::endl;
@@ -1750,8 +1787,12 @@ void VioBackEnd::printSmootherInfo(
   LOG(INFO) << "Nr values in new_values_ : " << new_values_.size()
             << ", with keys:";
   std::cout << "[\n\t";
-  BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair& key_value,
+#ifdef USING_GTSAM4
+    for (auto key_value : new_values_) {
+#else
+    BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair& key_value,
                  new_values_) {
+#endif
     std::cout << " " << gtsam::DefaultKeyFormatter(key_value.key) << " ";
   }
   std::cout << std::endl;
@@ -1770,7 +1811,7 @@ void VioBackEnd::printSmootherInfo(
 }
 
 void VioBackEnd::printSmartFactor(
-    boost::shared_ptr<SmartStereoFactor> gsf) const {
+    AUTOP::shared_ptr<SmartStereoFactor> gsf) const {
   CHECK(gsf);
   std::cout << "Smart Factor (valid: " << (gsf->isValid() ? "yes" : "NO!")
             << ", deg: " << (gsf->isDegenerate() ? "YES!" : "no")
@@ -1780,7 +1821,7 @@ void VioBackEnd::printSmartFactor(
 }
 
 void VioBackEnd::printPointPlaneFactor(
-    boost::shared_ptr<gtsam::PointPlaneFactor> ppf) const {
+    AUTOP::shared_ptr<gtsam::PointPlaneFactor> ppf) const {
   CHECK(ppf);
   std::cout << "Point Plane Factor: plane key "
             << gtsam::DefaultKeyFormatter(ppf->getPlaneKey()) << ", point key "
@@ -1788,28 +1829,28 @@ void VioBackEnd::printPointPlaneFactor(
 }
 
 void VioBackEnd::printPlanePrior(
-    boost::shared_ptr<gtsam::PriorFactor<gtsam::OrientedPlane3>> ppp) const {
+    AUTOP::shared_ptr<gtsam::PriorFactor<gtsam::OrientedPlane3>> ppp) const {
   CHECK(ppp);
   std::cout << "Plane Prior: plane key \t";
   ppp->printKeys();
 }
 
 void VioBackEnd::printPointPrior(
-    boost::shared_ptr<gtsam::PriorFactor<gtsam::Point3>> ppp) const {
+    AUTOP::shared_ptr<gtsam::PriorFactor<gtsam::Point3>> ppp) const {
   CHECK(ppp);
   std::cout << "Point Prior: point key \t";
   ppp->printKeys();
 }
 
 void VioBackEnd::printLinearContainerFactor(
-    boost::shared_ptr<gtsam::LinearContainerFactor> lcf) const {
+    AUTOP::shared_ptr<gtsam::LinearContainerFactor> lcf) const {
   CHECK(lcf);
   std::cout << "Linear Container Factor: \t";
   lcf->printKeys();
 }
 
 void VioBackEnd::printSelectedFactors(
-    const boost::shared_ptr<gtsam::NonlinearFactor>& g,
+    const AUTOP::shared_ptr<gtsam::NonlinearFactor>& g,
     const size_t& slot,
     const bool print_smart_factors,
     const bool print_point_plane_factors,
@@ -1817,7 +1858,7 @@ void VioBackEnd::printSelectedFactors(
     const bool print_point_priors,
     const bool print_linear_container_factors) const {
   if (print_smart_factors) {
-    const auto& gsf = boost::dynamic_pointer_cast<SmartStereoFactor>(g);
+    const auto& gsf = AUTOP::dynamic_pointer_cast<SmartStereoFactor>(g);
     if (gsf) {
       std::cout << "\tSlot # " << slot << ": ";
       printSmartFactor(gsf);
@@ -1825,7 +1866,7 @@ void VioBackEnd::printSelectedFactors(
   }
 
   if (print_point_plane_factors) {
-    const auto& ppf = boost::dynamic_pointer_cast<gtsam::PointPlaneFactor>(g);
+    const auto& ppf = AUTOP::dynamic_pointer_cast<gtsam::PointPlaneFactor>(g);
     if (ppf) {
       std::cout << "\tSlot # " << slot << ": ";
       printPointPlaneFactor(ppf);
@@ -1834,7 +1875,7 @@ void VioBackEnd::printSelectedFactors(
 
   if (print_plane_priors) {
     const auto& ppp =
-        boost::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::OrientedPlane3>>(
+        AUTOP::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::OrientedPlane3>>(
             g);
     if (ppp) {
       std::cout << "\tSlot # " << slot << ": ";
@@ -1844,7 +1885,7 @@ void VioBackEnd::printSelectedFactors(
 
   if (print_point_priors) {
     const auto& ppp =
-        boost::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::Point3>>(g);
+        AUTOP::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::Point3>>(g);
     if (ppp) {
       std::cout << "\tSlot # " << slot << ": ";
       printPointPrior(ppp);
@@ -1853,7 +1894,7 @@ void VioBackEnd::printSelectedFactors(
 
   if (print_linear_container_factors) {
     const auto& lcf =
-        boost::dynamic_pointer_cast<gtsam::LinearContainerFactor>(g);
+        AUTOP::dynamic_pointer_cast<gtsam::LinearContainerFactor>(g);
     if (lcf) {
       std::cout << "\tSlot # " << slot << ": ";
       printLinearContainerFactor(lcf);
@@ -1889,7 +1930,7 @@ void VioBackEnd::computeSmartFactorStatistics() {
   gtsam::NonlinearFactorGraph graph = smoother_->getFactors();
   for (const auto& g : graph) {
     if (g) {
-      const auto& gsf = boost::dynamic_pointer_cast<SmartStereoFactor>(g);
+      const auto& gsf = AUTOP::dynamic_pointer_cast<SmartStereoFactor>(g);
       if (gsf) {
         debug_info_.numSF_ += 1;
 
@@ -1916,7 +1957,11 @@ void VioBackEnd::computeSmartFactorStatistics() {
 
         // Check SF status
         const gtsam::TriangulationResult& result = gsf->point();
+#ifdef USING_GTSAM4
+        if (result.has_value()) {
+#else
         if (result.is_initialized()) {
+#endif
           if (result.degenerate()) debug_info_.numDegenerate_ += 1;
           if (result.farPoint()) debug_info_.numFarPoints_ += 1;
           if (result.outlier()) debug_info_.numOutliers_ += 1;
@@ -2046,12 +2091,12 @@ void VioBackEnd::deleteAllFactorsWithKeyFromFactorGraph(
       if ((*it)->find(key) != (*it)->end()) {
         // We found our lmk in the list of keys of the factor.
         // Sanity check, this lmk has no priors right?
-        CHECK(!boost::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::Point3>>(
+        CHECK(!AUTOP::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::Point3>>(
             *it));
         // We are not deleting a smart factor right?
         // Otherwise we need to update structure:
         // lmk_ids_of_new_smart_factors...
-        CHECK(!boost::dynamic_pointer_cast<SmartStereoFactor>(*it));
+        CHECK(!AUTOP::dynamic_pointer_cast<SmartStereoFactor>(*it));
         // Whatever factor this is, it has our lmk...
         // Delete it.
         LOG(WARNING) << "Delete factor in new_factors at slot # "
@@ -2114,17 +2159,17 @@ void VioBackEnd::findSlotsOfFactorsWithKey(
   CHECK_NOTNULL(slots_of_factors_with_key);
   slots_of_factors_with_key->resize(0);
   size_t slot = 0;
-  for (const boost::shared_ptr<gtsam::NonlinearFactor>& g : graph) {
+  for (const AUTOP::shared_ptr<gtsam::NonlinearFactor>& g : graph) {
     if (g) {
       // Found a valid factor.
       if (g->find(key) != g->end()) {
         // Whatever factor this is, it has our lmk...
         // Sanity check, this lmk has no priors right?
-        CHECK(!boost::dynamic_pointer_cast<gtsam::LinearContainerFactor>(g));
+        CHECK(!AUTOP::dynamic_pointer_cast<gtsam::LinearContainerFactor>(g));
         CHECK(
-            !boost::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::Point3>>(g));
+            !AUTOP::dynamic_pointer_cast<gtsam::PriorFactor<gtsam::Point3>>(g));
         // Sanity check that we are not deleting a smart factor.
-        CHECK(!boost::dynamic_pointer_cast<SmartStereoFactor>(g));
+        CHECK(!AUTOP::dynamic_pointer_cast<SmartStereoFactor>(g));
         // Delete it.
         LOG(WARNING) << "Delete factor in graph at slot # " << slot
                      << " corresponding to lmk with id: "

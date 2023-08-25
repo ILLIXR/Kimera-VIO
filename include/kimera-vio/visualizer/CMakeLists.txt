@@ -1,5 +1,5 @@
 ### Add includes
-target_sources(kimera_vio PRIVATE
+target_sources(kimera_vio${ILLIXR_BUILD_SUFFIX} PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/Visualizer3D-definitions.h"
   "${CMAKE_CURRENT_LIST_DIR}/Visualizer3DModule.h"
   "${CMAKE_CURRENT_LIST_DIR}/Visualizer3DFactory.h"

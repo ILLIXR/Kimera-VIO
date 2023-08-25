@@ -14,7 +14,7 @@
 
 #include "kimera-vio/frontend/Camera.h"
 
-#include <Eigen/Core>
+#include <eigen3/Eigen/Core>
 
 #include <opencv2/core.hpp>
 

@@ -40,7 +40,7 @@
 #include <functional>
 #include <map>
 
-#include <Eigen/Dense>
+#include <eigen3/Eigen/Dense>
 
 #include "kimera-vio/common/vio_types.h"
 #include "kimera-vio/imu-frontend/ImuFrontEnd-definitions.h"

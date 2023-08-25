@@ -1,5 +1,5 @@
 ### Add source code just for IDEs
-target_sources(kimera_vio PRIVATE
+target_sources(kimera_vio${ILLIXR_BUILD_SUFFIX} PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/FactorGraphManagement.h"
   "${CMAKE_CURRENT_LIST_DIR}/RegularVioBackEnd-definitions.h"
   "${CMAKE_CURRENT_LIST_DIR}/RegularVioBackEnd.h"

@@ -17,10 +17,11 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <memory>
 
 #include <gtsam/base/numericalDerivative.h>
 #include <boost/assign/std/vector.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 
 #include <gtsam_unstable/nonlinear/IncrementalFixedLagSmoother.h>
 
@@ -67,8 +68,8 @@ void setIsam2Params(const BackendParams& vio_params,
   }
 
   // Here there was commented code about setRelinearizeThreshold.
-  isam_param->setCacheLinearizedFactors(false);
-  isam_param->setEvaluateNonlinearError(true);
+  isam_param->cacheLinearizedFactors = false;
+  isam_param->evaluateNonlinearError = true;
   isam_param->relinearizeThreshold = vio_params.relinearizeThreshold_;
   isam_param->relinearizeSkip = vio_params.relinearizeSkip_;
   // isam_param->enablePartialRelinearizationCheck = true;
@@ -152,17 +153,15 @@ TEST(testPointPlaneFactor, Jacobians) {
 
   // Use the factor to calculate the Jacobians
   gtsam::Matrix H1Actual, H2Actual;
-  factor.evaluateError(point, plane, H1Actual, H2Actual);
+  factor.evaluateError(point, plane, &H1Actual, &H2Actual);
 
   // Calculate numerical derivatives
   Matrix H1Expected = numericalDerivative21<Vector, Point3, OrientedPlane3>(
-      boost::bind(&PointPlaneFactor::evaluateError, &factor, _1, _2,
-                  boost::none, boost::none),
+      boost::bind<Vector>(boost::mem_fn(&PointPlaneFactor::evaluateError), boost::ref(factor), boost::placeholders::_1, boost::placeholders::_2, {}, {}),
       point, plane, delta_value);
 
   Matrix H2Expected = numericalDerivative22<Vector, Point3, OrientedPlane3>(
-      boost::bind(&PointPlaneFactor::evaluateError, &factor, _1, _2,
-                  boost::none, boost::none),
+      boost::bind(&PointPlaneFactor::evaluateError, boost::ref(factor), boost::placeholders::_1, boost::placeholders::_2),
       point, plane, delta_value);
 
   // Verify the Jacobians are correct
@@ -192,16 +191,16 @@ TEST(testPointPlaneFactor, JacobiansNegative) {
 
   // Use the factor to calculate the Jacobians
   gtsam::Matrix H1Actual, H2Actual;
-  factor.evaluateError(point, plane, H1Actual, H2Actual);
+  factor.evaluateError(point, plane, &H1Actual, &H2Actual);
 
   // Calculate numerical derivatives
   Matrix H1Expected = numericalDerivative21<Vector, Point3, OrientedPlane3>(
-      boost::bind(&PointPlaneFactor::evaluateError, &factor, _1, _2,
+      boost::bind(&PointPlaneFactor::evaluateError, &factor, boost::placeholders::_1, boost::placeholders::_2,
                   boost::none, boost::none),
       point, plane, delta_value);
 
   Matrix H2Expected = numericalDerivative22<Vector, Point3, OrientedPlane3>(
-      boost::bind(&PointPlaneFactor::evaluateError, &factor, _1, _2,
+      boost::bind(&PointPlaneFactor::evaluateError, &factor, boost::placeholders::_1, boost::placeholders::_2,
                   boost::none, boost::none),
       point, plane, delta_value);
 
@@ -384,22 +383,22 @@ TEST(testPointPlaneFactor, MultiplePlanesIncrementalOptimization) {
       noiseModel::Diagonal::Sigmas(Vector3(0.1, 0.1, 0.1));
   Point3 priorMean1(0.0, 0.0, 1.0);  // prior at origin
   graph.push_back(
-      boost::make_shared<PriorFactor<Point3>>(1, priorMean1, priorNoise));
+      std::make_shared<PriorFactor<Point3>>(1, priorMean1, priorNoise));
   Point3 priorMean2(1.0, 0.0, 1.0);  // prior at origin
   graph.push_back(
-      boost::make_shared<PriorFactor<Point3>>(2, priorMean2, priorNoise));
+      std::make_shared<PriorFactor<Point3>>(2, priorMean2, priorNoise));
   Point3 priorMean3(0.0, 1.0, 1.0);  // prior at origin
   graph.push_back(
-      boost::make_shared<PriorFactor<Point3>>(3, priorMean3, priorNoise));
+      std::make_shared<PriorFactor<Point3>>(3, priorMean3, priorNoise));
 
   noiseModel::Isotropic::shared_ptr regularityNoise =
       noiseModel::Isotropic::Sigma(1, 0.5);
   graph.push_back(
-      boost::make_shared<gtsam::PointPlaneFactor>(1, 4, regularityNoise));
+      std::make_shared<gtsam::PointPlaneFactor>(1, 4, regularityNoise));
   graph.push_back(
-      boost::make_shared<gtsam::PointPlaneFactor>(2, 4, regularityNoise));
+      std::make_shared<gtsam::PointPlaneFactor>(2, 4, regularityNoise));
   graph.push_back(
-      boost::make_shared<gtsam::PointPlaneFactor>(3, 4, regularityNoise));
+      std::make_shared<gtsam::PointPlaneFactor>(3, 4, regularityNoise));
   Values initial;
   initial.insert(1, Point3(0.0, 19.0, 3.0));
   initial.insert(2, Point3(-1.0, 2.0, 2.0));
@@ -459,23 +458,23 @@ TEST(testPointPlaneFactor, MultiplePlanesIncrementalOptimization) {
   // Add new plane.
   Point3 priorMeanA(0.0, 0.0, 2.0);  // prior at origin
   graph.push_back(
-      boost::make_shared<PriorFactor<Point3>>(5, priorMeanA, priorNoise));
+      std::make_shared<PriorFactor<Point3>>(5, priorMeanA, priorNoise));
   Point3 priorMeanB(1.0, 0.0, 2.0);  // prior at origin
   graph.push_back(
-      boost::make_shared<PriorFactor<Point3>>(6, priorMeanB, priorNoise));
+      std::make_shared<PriorFactor<Point3>>(6, priorMeanB, priorNoise));
   Point3 priorMeanC(0.0, 1.0, 2.0);  // prior at origin
   graph.push_back(
-      boost::make_shared<PriorFactor<Point3>>(7, priorMeanC, priorNoise));
+      std::make_shared<PriorFactor<Point3>>(7, priorMeanC, priorNoise));
 
   // graph.emplace_shared<PointPlaneFactor>(5, 8, regularityNoise);
   // graph.emplace_shared<PointPlaneFactor>(6, 8, regularityNoise);
   // graph.emplace_shared<PointPlaneFactor>(7, 8, regularityNoise);
   graph.push_back(
-      boost::make_shared<gtsam::PointPlaneFactor>(5, 8, regularityNoise));
+      std::make_shared<gtsam::PointPlaneFactor>(5, 8, regularityNoise));
   graph.push_back(
-      boost::make_shared<gtsam::PointPlaneFactor>(6, 8, regularityNoise));
+      std::make_shared<gtsam::PointPlaneFactor>(6, 8, regularityNoise));
   graph.push_back(
-      boost::make_shared<gtsam::PointPlaneFactor>(7, 8, regularityNoise));
+      std::make_shared<gtsam::PointPlaneFactor>(7, 8, regularityNoise));
 
   initial.clear();
   initial.insert(5, Point3(0.0, 19.0, 2.0));

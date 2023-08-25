@@ -20,6 +20,9 @@
 
 #include "kimera-vio/backend/RegularVioBackEnd.h"
 
+#ifdef USING_GTSAM4
+#include <memory>
+#endif
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -28,6 +31,7 @@
 
 #include "kimera-vio/factors/PointPlaneFactor.h"
 #include "kimera-vio/utils/UtilsNumerical.h"
+#include "kimera-vio/definitions.h"
 
 DEFINE_int32(min_num_of_observations,
              2,
@@ -140,7 +144,7 @@ RegularVioBackEnd::RegularVioBackEnd(
                  regular_vio_params_.regularityNormType_,
                  regular_vio_params_.regularityNormParam_);
 
-  mono_cal_ = boost::make_shared<Cal3_S2>(stereo_cal_->calibration());
+  mono_cal_ = AUTOP::make_shared<Cal3_S2>(stereo_cal_->calibration());
   CHECK(mono_cal_->equals(stereo_cal_->calibration()))
       << "Monocular calibration should match Stereo calibration";
 }
@@ -460,7 +464,7 @@ void RegularVioBackEnd::addLandmarkToGraph(const LandmarkId& lmk_id,
   // We use a unit pinhole projection camera for the smart factors to be
   // more efficient.
   SmartStereoFactor::shared_ptr new_factor =
-      boost::make_shared<SmartStereoFactor>(
+      AUTOP::make_shared<SmartStereoFactor>(
           smart_noise_, smart_factors_params_, B_Pose_leftCam_);
 
   VLOG(20) << "Adding landmark with id: " << lmk_id
@@ -579,7 +583,7 @@ void RegularVioBackEnd::updateExistingSmartFactor(
 
   // Clone old factor as a new factor.
   SmartStereoFactor::shared_ptr new_factor =
-      boost::make_shared<SmartStereoFactor>(*old_factor);
+      AUTOP::make_shared<SmartStereoFactor>(*old_factor);
 
   // Add observation to new factor.
   VLOG(20) << "Added observation for smart factor of lmk with id: " << lmk_id;
@@ -643,7 +647,11 @@ bool RegularVioBackEnd::convertSmartToProjectionFactor(
 
   // Check triangulation result is initialized.
   if (old_factor->point().valid()) {
+#ifdef USING_GTSAM4
+    CHECK(old_factor->point().has_value());
+#else
     CHECK(old_factor->point().is_initialized());
+#endif
     VLOG(10) << "Performing conversion for lmk with id: " << lmk_id << " from "
              << " smart factor to projection factor.";
 
@@ -656,7 +664,7 @@ bool RegularVioBackEnd::convertSmartToProjectionFactor(
     // static const gtsam::noiseModel::Diagonal::shared_ptr prior_lmk_noise =
     //    gtsam::noiseModel::Diagonal::Sigmas(Vector3(1, 1, 1));
     // new_imu_prior_and_other_factors_.push_back(
-    //      boost::make_shared<gtsam::PriorFactor<gtsam::Point3> >(
+    //      AUTOP::make_shared<gtsam::PriorFactor<gtsam::Point3> >(
     //        lmk_key,
     //        *(old_factor->point()),
     //        prior_lmk_noise));
@@ -826,7 +834,7 @@ void RegularVioBackEnd::addProjectionFactor(
       if (parallax < FLAGS_max_parallax) {
         CHECK_GT(parallax, 0.0);
         new_imu_prior_and_other_factors->push_back(
-            boost::make_shared<gtsam::GenericStereoFactor<Pose3, Point3>>(
+            AUTOP::make_shared<gtsam::GenericStereoFactor<Pose3, Point3>>(
                 new_obs.second,
                 stereo_noise_,
                 gtsam::Symbol('x', new_obs.first),
@@ -845,7 +853,7 @@ void RegularVioBackEnd::addProjectionFactor(
     // Right pixel has a NAN value for u, use GenericProjectionFactor instead
     // of stereo.
     new_imu_prior_and_other_factors->push_back(
-        boost::make_shared<gtsam::GenericProjectionFactor<Pose3, Point3>>(
+        AUTOP::make_shared<gtsam::GenericProjectionFactor<Pose3, Point3>>(
             gtsam::Point2(new_obs.second.uL(), new_obs.second.v()),
             mono_noise_,
             gtsam::Symbol('x', new_obs.first),
@@ -960,7 +968,11 @@ bool RegularVioBackEnd::isSmartFactor3dPointGood(
     VLOG(20) << "Smart factor is NOT valid.";
     return false;
   } else {
+#ifdef USING_GTSAM4
+    CHECK(factor->point().has_value());
+#else
     CHECK(factor->point().is_initialized());
+#endif
     // If the smart factor has less than x number of observations,
     // then do not consider the landmark as valid.
     // This param is different from the one counting the track length
@@ -1052,7 +1064,7 @@ void RegularVioBackEnd::addRegularityFactors(
             idx_of_point_plane_factors_to_add->push_back(std::make_pair(
                 new_imu_prior_and_other_factors_.size(), lmk_id));
             new_imu_prior_and_other_factors_.push_back(
-                boost::make_shared<gtsam::PointPlaneFactor>(
+                AUTOP::make_shared<gtsam::PointPlaneFactor>(
                     gtsam::Symbol('l', lmk_id),
                     plane_key,
                     point_plane_regularity_noise_));
@@ -1092,7 +1104,7 @@ void RegularVioBackEnd::addRegularityFactors(
             // =
             //    gtsam::noiseModel::Diagonal::Sigmas(Vector3(0.5, 0.5, 0.5));
             // new_imu_prior_and_other_factors_.push_back(
-            //      boost::make_shared<gtsam::PriorFactor<gtsam::OrientedPlane3>
+            //      AUTOP::make_shared<gtsam::PriorFactor<gtsam::OrientedPlane3>
             //      >(
             //        plane_key,
             //        plane_value,
@@ -1105,7 +1117,7 @@ void RegularVioBackEnd::addRegularityFactors(
               idx_of_point_plane_factors_to_add->push_back(std::make_pair(
                   new_imu_prior_and_other_factors_.size(), prev_lmk_id));
               new_imu_prior_and_other_factors_.push_back(
-                  boost::make_shared<gtsam::PointPlaneFactor>(
+                  AUTOP::make_shared<gtsam::PointPlaneFactor>(
                       gtsam::Symbol('l', prev_lmk_id),
                       plane_key,
                       point_plane_regularity_noise_));
@@ -1185,7 +1197,7 @@ void RegularVioBackEnd::addRegularityFactors(
           idx_of_point_plane_factors_to_add->push_back(
               std::make_pair(new_imu_prior_and_other_factors_.size(), lmk_id));
           new_imu_prior_and_other_factors_.push_back(
-              boost::make_shared<gtsam::PointPlaneFactor>(
+              AUTOP::make_shared<gtsam::PointPlaneFactor>(
                   gtsam::Symbol('l', lmk_id),
                   plane_key,
                   point_plane_regularity_noise_));
@@ -1283,11 +1295,11 @@ void RegularVioBackEnd::removeOldRegularityFactors_Slow(
   // Loop over current graph.
   for (const auto& g : graph) {
     if (g) {
-      const auto& ppf = boost::dynamic_pointer_cast<gtsam::PointPlaneFactor>(g);
-      const auto& plane_prior = boost::dynamic_pointer_cast<
+      const auto& ppf = AUTOP::dynamic_pointer_cast<gtsam::PointPlaneFactor>(g);
+      const auto& plane_prior = AUTOP::dynamic_pointer_cast<
           gtsam::PriorFactor<gtsam::OrientedPlane3>>(g);
       const auto& lcf =
-          boost::dynamic_pointer_cast<gtsam::LinearContainerFactor>(g);
+          AUTOP::dynamic_pointer_cast<gtsam::LinearContainerFactor>(g);
       if (ppf) {
         // We found a PointPlaneFactor.
         for (const size_t& plane_id : plane_idx_to_clean) {
@@ -1489,7 +1501,7 @@ void RegularVioBackEnd::removeOldRegularityFactors_Slow(
                           FLAGS_prior_noise_sigma_normal,
                           FLAGS_prior_noise_sigma_distance));
           new_imu_prior_and_other_factors_.push_back(
-              boost::make_shared<gtsam::PriorFactor<gtsam::OrientedPlane3>>(
+              AUTOP::make_shared<gtsam::PriorFactor<gtsam::OrientedPlane3>>(
                   plane_symbol.key(), plane_estimate, prior_noise));
 
           // Delete just the bad factors.
@@ -1534,7 +1546,7 @@ void RegularVioBackEnd::removeOldRegularityFactors_Slow(
   //  =
   //  //        gtsam::noiseModel::Diagonal::Sigmas(Vector3(1.0, 1.0, 1.0));
   //  //    new_imu_prior_and_other_factors_.push_back(
-  //  //          boost::make_shared<gtsam::PriorFactor<gtsam::Point3>>(
+  //  //          AUTOP::make_shared<gtsam::PriorFactor<gtsam::Point3>>(
   //  //            point_symbol.key(),
   //  //            point,
   //  //            prior_lmk_noise));
@@ -1604,7 +1616,7 @@ void RegularVioBackEnd::deleteNewSlots(
     // The slot is valid.
     CHECK(new_imu_prior_and_other_factors->exists(i.first));
 
-    const auto& ppf = boost::dynamic_pointer_cast<gtsam::PointPlaneFactor>(
+    const auto& ppf = AUTOP::dynamic_pointer_cast<gtsam::PointPlaneFactor>(
         new_imu_prior_and_other_factors->at(i.first));
     // The factor is really a point plane one.
     CHECK(ppf);

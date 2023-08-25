@@ -16,6 +16,10 @@
 // TODO(Toni): put tracker in another folder.
 #pragma once
 
+#ifdef USING_GTSAM4
+#include <boost/optional.hpp>
+#endif
+
 #include <opencv2/opencv.hpp>
 
 #include <gtsam/base/Matrix.h>

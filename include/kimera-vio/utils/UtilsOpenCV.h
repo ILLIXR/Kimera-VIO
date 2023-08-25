@@ -20,7 +20,7 @@
 
 #include <glog/logging.h>
 
-#include <Eigen/Core>
+#include <eigen3/Eigen/Core>
 
 #include <opencv2/highgui/highgui_c.h>
 #include <opencv2/opencv.hpp>
@@ -36,8 +36,8 @@
 // TODO(Toni): do not forward declare that much!!
 // Forward declare classes.
 namespace gtsam {
-class Point2;
-class Point3;
+//class Point2;
+//class Point3;
 class Pose3;
 class Symbol;
 typedef Eigen::MatrixXd Matrix;

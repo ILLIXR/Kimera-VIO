@@ -40,8 +40,13 @@ struct InitializationInputPayload : public FrontendOutput {
       const ImuFrontEnd::PimPtr& pim,
       const ImuAccGyrS imu_acc_gyrs,
       const DebugTrackerInfo& debug_tracker_info,
+#ifdef USING_GTSAM4
+      const gtsam::PreintegratedAhrsMeasurements& ahrs_pim =
+          gtsam::PreintegratedAhrsMeasurements())
+#else
       const gtsam::AHRSFactor::PreintegratedMeasurements& ahrs_pim =
           gtsam::AHRSFactor::PreintegratedMeasurements())
+#endif
       : FrontendOutput(is_keyframe,
                        status_stereo_measurements,
                        tracker_status,
@@ -52,8 +57,11 @@ struct InitializationInputPayload : public FrontendOutput {
                        cv::Mat(),
                        debug_tracker_info),
         ahrs_pim_(ahrs_pim) {}
-
-  const gtsam::AHRSFactor::PreintegratedMeasurements ahrs_pim_;
+#ifdef USING_GTSAM4
+     const gtsam::PreintegratedAhrsMeasurements ahrs_pim_;
+#else
+     const gtsam::AHRSFactor::PreintegratedMeasurements ahrs_pim_;
+#endif
 };
 
 }  // namespace VIO

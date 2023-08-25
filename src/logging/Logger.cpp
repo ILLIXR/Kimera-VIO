@@ -150,7 +150,11 @@ void BackendLogger::logBackendResultsCSV(const BackendOutput& vio_output) {
   }
   const auto& cached_state = vio_output.W_State_Blkf_;
   const auto& w_pose_blkf_trans = cached_state.pose_.translation().transpose();
+#ifdef USING_GTSAM4
+  const auto& w_pose_blkf_rot = cached_state.pose_.rotation().toQuaternion();
+#else
   const auto& w_pose_blkf_rot = cached_state.pose_.rotation().quaternion();
+#endif
   const auto& w_vel_blkf = cached_state.velocity_.transpose();
   const auto& imu_bias_gyro = cached_state.imu_bias_.gyroscope().transpose();
   const auto& imu_bias_acc = cached_state.imu_bias_.accelerometer().transpose();
@@ -158,10 +162,17 @@ void BackendLogger::logBackendResultsCSV(const BackendOutput& vio_output) {
                 << w_pose_blkf_trans.x() << ","    //
                 << w_pose_blkf_trans.y() << ","    //
                 << w_pose_blkf_trans.z() << ","    //
+#ifdef USING_GTSAM4
+                << w_pose_blkf_rot.w() << ","       // q_w
+                << w_pose_blkf_rot.x() << ","       // q_x
+                << w_pose_blkf_rot.y() << ","       // q_y
+                << w_pose_blkf_rot.z() << ","       // q_z
+#else
                 << w_pose_blkf_rot(0) << ","       // q_w
                 << w_pose_blkf_rot(1) << ","       // q_x
                 << w_pose_blkf_rot(2) << ","       // q_y
                 << w_pose_blkf_rot(3) << ","       // q_z
+#endif
                 << w_vel_blkf(0) << ","            //
                 << w_vel_blkf(1) << ","            //
                 << w_vel_blkf(2) << ","            //

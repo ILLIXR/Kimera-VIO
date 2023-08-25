@@ -324,8 +324,12 @@ std::vector<gtsam::Pose3> InitializationBackEnd::optimizeInitialVisualStates(
   VLOG(10) << "Levenberg Marquardt optimizer done.";
   // Query optimized poses in body frame (b0_T_bk)
   std::vector<gtsam::Pose3> initial_states;
+#ifdef USING_GTSAM4
+  for (auto key_value : initial_values) {
+#else
   BOOST_FOREACH (const gtsam::Values::ConstKeyValuePair &key_value,
                  initial_values) {
+#endif
     initial_states.push_back(initial_values.at<gtsam::Pose3>(key_value.key));
   }
   VLOG(10) << "Initialization values retrieved.";

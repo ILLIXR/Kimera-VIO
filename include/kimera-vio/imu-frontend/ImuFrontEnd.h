@@ -20,8 +20,12 @@
 #include <thread>
 #include <utility>
 #include <mutex>
+#include "kimera-vio/definitions.h"
+#ifdef USING_GTSAM4
+#include <memory>
+#endif
 
-#include <Eigen/Dense>
+#include <eigen3/Eigen/Dense>
 
 #include <gtsam/base/Matrix.h>
 #include <gtsam/base/Vector.h>
@@ -188,10 +192,10 @@ public:
   static gtsam::PreintegrationType::Params convertVioImuParamsToGtsam(
       const ImuParams& imu_params);
 
-  static boost::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params>
+  static AUTOP::shared_ptr<gtsam::PreintegratedCombinedMeasurements::Params>
   generateCombinedImuParams(const ImuParams& imu_params);
 
-  static boost::shared_ptr<gtsam::PreintegratedImuMeasurements::Params>
+  static AUTOP::shared_ptr<gtsam::PreintegratedImuMeasurements::Params>
   generateRegularImuParams(const ImuParams& imu_params);
 
  private:

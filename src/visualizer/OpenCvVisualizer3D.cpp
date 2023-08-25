@@ -31,6 +31,7 @@
 #include "kimera-vio/utils/Timer.h"
 #include "kimera-vio/utils/UtilsGTSAM.h"
 #include "kimera-vio/utils/UtilsOpenCV.h"
+#include "kimera-vio/definitions.h"
 
 #include "kimera-vio/factors/PointPlaneFactor.h"  // For visualization of constraints.
 
@@ -209,7 +210,7 @@ VisualizerOutput::UniquePtr OpenCvVisualizer3D::spinOnce(
         LandmarkIds lmk_ids_in_current_pp_factors;
         for (const auto& g : input.backend_output_->graph_) {
           const auto& ppf =
-              boost::dynamic_pointer_cast<gtsam::PointPlaneFactor>(g);
+              AUTOP::dynamic_pointer_cast<gtsam::PointPlaneFactor>(g);
           if (ppf) {
             // We found a PointPlaneFactor.
             // Get point key.

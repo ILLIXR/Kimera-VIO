@@ -1,16 +1,17 @@
-cmake_minimum_required (VERSION 3.5)
+cmake_minimum_required (VERSION 3.16)
 project(kimera_vio VERSION 1.0 LANGUAGES CXX)
 
 # ILLIXR requires C++17
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)# Make sure that custom modules like FindXXXX are found
 
-# Make sure that custom modules like FindXXXX are found
 # Prefer to use system installation of gflags/glog
 set(GFLAGS_PREFER_EXPORTED_GFLAGS_CMAKE_CONFIGURATION TRUE)
 set(GLOG_PREFER_EXPORTED_GLOG_CMAKE_CONFIGURATION TRUE)
 list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_SOURCE_DIR}/cmake)
+list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_INSTALL_PREFIX}/lib/cmake)
 
+link_directories(BEFORE ${CMAKE_INSTALL_DIR}/lib)
 IF(APPLE)
     # Fix linking on 10.14+. See https://stackoverflow.com/questions/54068035
     LINK_DIRECTORIES(/usr/local/lib)
@@ -33,18 +34,30 @@ if(NOT TARGET Boost::boost)
   INTERFACE_INCLUDE_DIRECTORIES "${Boost_INCLUDE_DIRS}")
 endif()
 
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(Gflags REQUIRED)
 find_package(Glog 0.3.5 REQUIRED)
 find_package(GTSAM REQUIRED)
-find_package(opengv REQUIRED)
-find_package(OpenCV REQUIRED EXACT 3.4.6)
-find_package(DBoW2 REQUIRED)
-if(NOT TARGET DBoW2::DBoW2)
-  add_library(DBoW2::DBoW2 INTERFACE IMPORTED)
-  set_target_properties(DBoW2::DBoW2 PROPERTIES
-  INTERFACE_LINK_LIBRARIES "${DBoW2_LIBRARIES}"
-  INTERFACE_INCLUDE_DIRECTORIES "${DBoW2_INCLUDE_DIRS}")
+if(${GTSAM_VERSION_MAJOR} EQUAL 4)
+  add_definitions(-DUSING_GTSAM4)
 endif()
+find_package(opengv REQUIRED)
+if(DEFINED INTERNAL_OPENCV)
+  find_package(OpenCV REQUIRED PATHS ${INTERNAL_OPENCV} NO_DEFAULT_PATH NO_CMAKE_ENVIRONMENT_PATH NO_SYSTEM_ENVIRONMENT_PATH NO_CMAKE_PACKAGE_REGISTRY NO_CMAKE_SYSTEM_PATH NO_CMAKE_SYSTEM_PACKAGE_REGISTRY)
+else()
+  find_package(OpenCV REQUIRED)
+endif()
+if(${OpenCV_VERSION_MAJOR} EQUAL 4)
+  add_definitions(-DUSING_OPENCV4)
+endif()
+find_package(DBoW2 REQUIRED)
+message(${DBoW2_LIBRARIES})
+#if(NOT TARGET DBoW2::DBoW2)
+#  add_library(DBoW2::DBoW2 INTERFACE IMPORTED)
+#  set_target_properties(DBoW2::DBoW2 PROPERTIES
+#  INTERFACE_LINK_LIBRARIES "${DBoW2_LIBRARIES}"
+#  INTERFACE_INCLUDE_DIRECTORIES "${DBoW2_INCLUDE_DIRS}")
+#endif()
 find_package(KimeraRPGO REQUIRED)
 
 ### External Dependencies
@@ -77,7 +90,7 @@ else()
 endif()
 
 ### Compile the code
-add_library(${PROJECT_NAME} SHARED "")
+add_library(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX} SHARED "")
 
 ### Add source code for data provider.
 add_subdirectory(include/kimera-vio/dataprovider)
@@ -121,21 +134,20 @@ add_subdirectory(src/imu-frontend)
 ### Add source code for visualizer.
 add_subdirectory(include/kimera-vio/visualizer)
 add_subdirectory(src/visualizer)
-
-target_link_libraries(${PROJECT_NAME}
-  PRIVATE
-    opengv
-    DBoW2::DBoW2
-    KimeraRPGO
+target_link_libraries(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
   PUBLIC
+    opengv
+    KimeraRPGO
+    ${DBoW2_LIBRARIES}
     Boost::boost
     ${OpenCV_LIBRARIES}
     ${GFLAGS_LIBRARIES}
     ${GLOG_LIBRARIES}
+    Eigen3::Eigen
     gtsam
     gtsam_unstable
  )
-target_include_directories(${PROJECT_NAME}
+target_include_directories(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
   PUBLIC
     ${OpenCV_INCLUDE_DIRS}
     ${GFLAGS_INCLUDE_DIRS}
@@ -145,25 +157,26 @@ target_include_directories(${PROJECT_NAME}
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_options(${PROJECT_NAME}
+target_compile_options(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
   PRIVATE -Wall -pipe
-  PRIVATE -march=native
 )
 
 # We would just need to say cxx_std_11 if we were using cmake 3.8
-target_compile_features(${PROJECT_NAME} PUBLIC
+target_compile_features(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX} PUBLIC
         cxx_auto_type cxx_constexpr cxx_range_for cxx_nullptr cxx_override)
 
 # Add an alias so that library can be used inside the build tree,
 # e.g. when testing
-add_library(kimera_vio::kimera_vio ALIAS kimera_vio)
+add_library(kimera_vio::kimera_vio ALIAS kimera_vio${ILLIXR_BUILD_SUFFIX})
 
 add_executable(stereoVIOEuroc ./examples/KimeraVIO.cpp)
 target_link_libraries(stereoVIOEuroc PUBLIC kimera_vio::kimera_vio)
+option(ILLIXR_ROOT "" "")
 
-add_library(plugin SHARED ./examples/plugin.cpp)
-target_include_directories(plugin PRIVATE ./common)
-target_link_libraries(plugin PUBLIC kimera_vio::kimera_vio)
+add_library(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} SHARED ./examples/plugin.cpp)
+target_include_directories(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PRIVATE ${ILLIXR_ROOT})
+target_link_libraries(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PUBLIC kimera_vio::kimera_vio)
+target_compile_definitions(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PUBLIC -DPARAMS_LOCATION=\"${CMAKE_INSTALL_PREFIX}/etc/kimera_vio/params\")
 
 ############################### TESTS ##########################################
 ### Add testing
@@ -279,13 +292,13 @@ configure_package_config_file(
 
 option(EXPORT_KIMERA "Export kimera_vio instead of installing it." OFF)
 if(EXPORT_KIMERA)
-  export(TARGETS ${PROJECT_NAME}
+  export(TARGETS ${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
          FILE kimera_vioTargets.cmake)
-       export(PACKAGE ${PROJECT_NAME})
+       export(PACKAGE ${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX})
 else(EXPORT_KIMERA)
   include(GNUInstallDirs)
   ## First of all, we need to install the library itself.
-  install(TARGETS ${PROJECT_NAME}
+  install(TARGETS ${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
       EXPORT kimera_vio-export
       LIBRARY DESTINATION lib
       ARCHIVE DESTINATION lib
@@ -294,6 +307,8 @@ else(EXPORT_KIMERA)
       INCLUDES DESTINATION include # We need this right?
       RUNTIME DESTINATION bin
   )
+  install(TARGETS plugin.kimera_vio${ILLIXR_BUILD_SUFFIX}
+          DESTINATION lib)
   install(EXPORT kimera_vio-export
     FILE
       kimera_vioTargets.cmake
@@ -313,6 +328,8 @@ else(EXPORT_KIMERA)
       ${CMAKE_CURRENT_LIST_DIR}/cmake/FindGlog.cmake
       DESTINATION ${INSTALL_CONFIGDIR}
   )
+  install(DIRECTORY ${CMAKE_SOURCE_DIR}/params
+          DESTINATION etc/kimera_vio)
 endif(EXPORT_KIMERA)
 
 ################################################################################

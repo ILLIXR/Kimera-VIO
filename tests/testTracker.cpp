@@ -57,7 +57,7 @@ class TestTracker : public ::testing::Test {
     InitializeData();
 
     // Initialize tracker.
-    tracker_ = VIO::make_unique<Tracker>(tracker_params_, CameraParams());
+    tracker_ = VIO::make_unique<VIO::Tracker>(tracker_params_, CameraParams());
   }
 
  protected:
@@ -497,7 +497,7 @@ class TestTracker : public ::testing::Test {
       const StereoCamera stereoCam,
       const StereoPoint2 stereoPoint,
       const Matrix3 stereoPtCov) {
-    Vector3 meanVector = stereoCam.backproject2(stereoPoint).vector();
+    Vector3 meanVector = stereoCam.backproject2(stereoPoint);
     Vector3 sampleMean = Vector3::Zero();
 
     default_random_engine generator;
@@ -516,7 +516,7 @@ class TestTracker : public ::testing::Test {
                                         stereoPoint.uR() + noiseUR,
                                         stereoPoint.v() + noiseV);
 
-      Vector3 sample_i = stereoCam.backproject2(perturbedStereoPoint).vector();
+      Vector3 sample_i = stereoCam.backproject2(perturbedStereoPoint);
       sampleMean += sample_i;
       sampleCovariance +=
           (sample_i - meanVector) * (sample_i - meanVector).transpose();
@@ -529,7 +529,7 @@ class TestTracker : public ::testing::Test {
  protected:
   // Perform Ransac
   FrontendParams tracker_params_;
-  std::unique_ptr<Tracker> tracker_;
+  std::unique_ptr<VIO::Tracker> tracker_;
 };
 
 /* ************************************************************************* */
@@ -603,7 +603,7 @@ TEST_F(TestTracker, geometricOutlierRejectionMono) {
       trackerParams.ransac_max_iterations_ = 1000;
       // trackerParams.ransac_probability_ = 0.8;
       trackerParams.ransac_randomize_ = false;
-      Tracker tracker(trackerParams, CameraParams());
+      VIO::Tracker tracker(trackerParams, CameraParams());
       TrackingStatus tracking_status;
       Pose3 estimated_pose;
       tie(tracking_status, estimated_pose) =
@@ -792,7 +792,7 @@ TEST_F(TestTracker, geometricOutlierRejectionStereo) {
 
       FrontendParams trackerParams;
       trackerParams.ransac_threshold_stereo_ = 0.3;
-      Tracker tracker(trackerParams, CameraParams());
+      VIO::Tracker tracker(trackerParams, CameraParams());
       TrackingStatus tracking_status;
       Pose3 estimated_pose;
       tie(tracking_status, estimated_pose) =
@@ -1013,7 +1013,7 @@ TEST_F(TestTracker, getPoint3AndCovariance) {
   StereoPoint2 stereoPoint(xL, xR, v);
 
   // create a 3D point in front of the camera
-  Vector3 point3 = stereoCam.backproject2(stereoPoint).vector();
+  Vector3 point3 = stereoCam.backproject2(stereoPoint);
   int pointId = 0;  // only point
 
   Matrix3 stereoPtCov = Matrix3::Identity();
@@ -1026,7 +1026,7 @@ TEST_F(TestTracker, getPoint3AndCovariance) {
   // use function to get actual answer
   Vector3 f_ref_i_expected, f_ref_i_actual;
   Matrix3 cov_ref_i_expected, cov_ref_i_actual;
-  tie(f_ref_i_actual, cov_ref_i_actual) = Tracker::getPoint3AndCovariance(
+  tie(f_ref_i_actual, cov_ref_i_actual) = VIO::Tracker::getPoint3AndCovariance(
       *ref_stereo_frame, stereoCam, pointId, stereoPtCov);
 
   // use monte carlo method to get expected answer
@@ -1071,7 +1071,7 @@ TEST_F(TestTracker, findOutliers) {
     random_shuffle(inliers.begin(), inliers.end());
 
     vector<int> outliers_actual;
-    Tracker::findOutliers(matches_ref_cur, inliers, &outliers_actual);
+    VIO::Tracker::findOutliers(matches_ref_cur, inliers, &outliers_actual);
 
     // check that outliers_actual matches outliers_expected
     EXPECT_EQ(outliers_expected.size(), outliers_actual.size());
@@ -1099,7 +1099,7 @@ TEST_F(TestTracker, findOutliers) {
     vector<pair<size_t, size_t>> matches_ref_cur(num_outliers);
 
     vector<int> outliers_actual;
-    Tracker::findOutliers(matches_ref_cur, inliers, &outliers_actual);
+    VIO::Tracker::findOutliers(matches_ref_cur, inliers, &outliers_actual);
 
     // check that outliers_actual matches outliers_expected
     EXPECT_EQ(outliers_expected.size(), outliers_actual.size());
@@ -1126,7 +1126,7 @@ TEST_F(TestTracker, findOutliers) {
     random_shuffle(inliers.begin(), inliers.end());
 
     vector<int> outliers_actual;
-    Tracker::findOutliers(matches_ref_cur, inliers, &outliers_actual);
+    VIO::Tracker::findOutliers(matches_ref_cur, inliers, &outliers_actual);
 
     // check that outliers_actual matches outliers_expected
     EXPECT_EQ(outliers_actual.size(), 0);
@@ -1176,7 +1176,7 @@ TEST_F(TestTracker, FindMatchingKeypoints) {
   random_shuffle(cur_frame->landmarks_.begin(), cur_frame->landmarks_.end());
 
   vector<pair<size_t, size_t>> matches_ref_cur;
-  Tracker::findMatchingKeypoints(*ref_frame, *cur_frame, &matches_ref_cur);
+  VIO::Tracker::findMatchingKeypoints(*ref_frame, *cur_frame, &matches_ref_cur);
 
   // Check the correctness of matches_ref_cur
   EXPECT_EQ(matches_ref_cur.size(), num_landmarks_common);
@@ -1261,7 +1261,7 @@ TEST_F(TestTracker, FindMatchingStereoKeypoints) {
   }
 
   vector<pair<size_t, size_t>> matches_ref_cur;
-  Tracker::findMatchingStereoKeypoints(
+  VIO::Tracker::findMatchingStereoKeypoints(
       *ref_stereo_frame, *cur_stereo_frame, &matches_ref_cur);
 
   // Check the correctness!

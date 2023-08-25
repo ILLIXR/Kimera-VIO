@@ -53,7 +53,11 @@ StereoVisionFrontEnd::StereoVisionFrontEnd(
       stereoFrame_k_(nullptr),
       stereoFrame_km1_(nullptr),
       stereoFrame_lkf_(nullptr),
+#ifdef USING_GTSAM4
+      keyframe_R_ref_frame_(gtsam::Rot3::Identity()),
+#else
       keyframe_R_ref_frame_(gtsam::Rot3::identity()),
+#endif
       frame_count_(0),
       keyframe_count_(0),
       feature_detector_(nullptr),
@@ -448,7 +452,10 @@ StatusStereoMeasurementsPtr StereoVisionFrontEnd::processStereoFrame(
   // Update keyframe to reference frame for next iteration.
   if (stereoFrame_k_->isKeyframe()) {
     // Reset relative rotation if we have a keyframe.
-    keyframe_R_ref_frame_ = gtsam::Rot3::identity();
+#ifdef USING_GTSAM4
+    keyframe_R_ref_frame_ = gtsam::Rot3::Identity();
+#else
+#endif
   } else {
     // Update rotation from keyframe to next iteration reference frame (aka
     // cur_frame in current iteration).
@@ -474,7 +481,11 @@ void StereoVisionFrontEnd::outlierRejectionMono(
     TrackingStatusPose* status_pose_mono) {
   CHECK_NOTNULL(status_pose_mono);
   if (tracker_.tracker_params_.ransac_use_2point_mono_ &&
+#ifdef USING_GTSAM4
+      !calLrectLkf_R_camLrectKf_imu.equals(gtsam::Rot3::Identity()) &&
+#else
       !calLrectLkf_R_camLrectKf_imu.equals(gtsam::Rot3::identity()) &&
+#endif
       !force_53point_ransac_) {
     // 2-point RANSAC.
     *status_pose_mono = tracker_.geometricOutlierRejectionMonoGivenRotation(
@@ -512,7 +523,11 @@ void StereoVisionFrontEnd::outlierRejectionStereo(
 
   gtsam::Matrix infoMatStereoTranslation = gtsam::Matrix3::Zero();
   if (tracker_.tracker_params_.ransac_use_1point_stereo_ &&
+#ifdef USING_GTSAM4
+      !calLrectLkf_R_camLrectKf_imu.equals(gtsam::Rot3::Identity()) &&
+#else
       !calLrectLkf_R_camLrectKf_imu.equals(gtsam::Rot3::identity()) &&
+#endif
       !force_53point_ransac_) {
     // 1-point RANSAC.
     std::tie(*status_pose_stereo, infoMatStereoTranslation) =

@@ -373,9 +373,13 @@ std::pair<double, double> UtilsOpenCV::ComputeRotationAndTranslationErrors(
       (expectedPose.rotation()).between(actualPose.rotation());
   gtsam::Vector3 rotErrorVector = gtsam::Rot3::Logmap(rotErrorMat);
   double rotError = rotErrorVector.norm();
-
+#ifdef USING_GTSAM4
+  gtsam::Vector3 actualTranslation = actualPose.translation();
+  gtsam::Vector3 expectedTranslation = expectedPose.translation();
+#else
   gtsam::Vector3 actualTranslation = actualPose.translation().vector();
   gtsam::Vector3 expectedTranslation = expectedPose.translation().vector();
+#endif
   if (upToScale) {
     double normExpected = expectedTranslation.norm();
     double normActual = actualTranslation.norm();

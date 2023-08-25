@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <boost/optional.hpp>
 #include <gtsam/geometry/OrientedPlane3.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
 
@@ -52,8 +53,13 @@ public:
   /// Hpoint: jacobian of h wrt point landmark
   /// Hplane: jacobian of h wrt plane
   virtual Vector evaluateError(const Point3& point, const OrientedPlane3& plane,
+#ifdef USING_GTSAM4
+                               Matrix* H_point = {},
+                               Matrix* H_plane = {}) const {
+#else
                                boost::optional<Matrix&> H_point = boost::none,
                                boost::optional<Matrix&> H_plane = boost::none) const {
+#endif
     Vector err(1);
     Unit3 plane_normal = plane.normal();
     double plane_distance = plane.distance();
@@ -65,7 +71,11 @@ public:
       // computations.
       H_plane_retract << plane_normal.basis(), Vector3::Zero(), 0, 0, 1;
       Vector4 p;
+#ifdef USING_GTSAM4
+      p << point, -1;
+#else
       p << point.vector(), -1;
+#endif
       *H_plane =  p.transpose() * H_plane_retract;
     }
 

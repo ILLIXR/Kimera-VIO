@@ -20,7 +20,7 @@
 
 #include <gtsam/base/numericalDerivative.h>
 #include <boost/assign/std/vector.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 
 #include <gtsam/geometry/OrientedPlane3.h>
 #include <gtsam/geometry/Point3.h>
@@ -122,19 +122,19 @@ TEST(testParallelPlaneRegularFactor, Jacobians) {
 
   // Use the factor to calculate the Jacobians
   gtsam::Matrix H1Actual, H2Actual;
-  factor.evaluateError(plane_1, plane_2, H1Actual, H2Actual);
+  factor.evaluateError(plane_1, plane_2, &H1Actual, &H2Actual);
 
   // Calculate numerical derivatives
   Matrix H1Expected =
       numericalDerivative21<Vector, OrientedPlane3, OrientedPlane3>(
-          boost::bind(&ParallelPlaneRegularBasicFactor::evaluateError, &factor,
-                      _1, _2, boost::none, boost::none),
+          boost::bind<Vector>(boost::mem_fn(&ParallelPlaneRegularBasicFactor::evaluateError),
+                              &factor, boost::placeholders::_1, boost::placeholders::_2),
           plane_1, plane_2, der_tol);
 
   Matrix H2Expected =
       numericalDerivative22<Vector, OrientedPlane3, OrientedPlane3>(
-          boost::bind(&ParallelPlaneRegularBasicFactor::evaluateError, &factor,
-                      _1, _2, boost::none, boost::none),
+          boost::bind<Vector>(boost::mem_fn(&ParallelPlaneRegularBasicFactor::evaluateError),
+                              &factor, boost::placeholders::_1, boost::placeholders::_2),
           plane_1, plane_2, der_tol);
 
   // Verify the Jacobians are correct
