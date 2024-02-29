@@ -12,6 +12,7 @@
  * @author Antoni Rosinol
  * @author Nathan Hughes
  */
+#include <opencv2/viz.hpp>
 
 #include "kimera-vio/frontend/RgbdCamera.h"
 
