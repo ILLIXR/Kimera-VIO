@@ -1,5 +1,5 @@
 ### Add source code
-target_sources(kimera_vio
+target_sources(kimera_vio${ILLIXR_BUILD_SUFFIX}
   PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/Visualizer3D.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/Visualizer3DModule.cpp"
@@ -15,7 +15,7 @@ target_sources(kimera_vio
 )
 
 if(Pangolin_FOUND)
-  target_sources(kimera_vio PRIVATE
+  target_sources(kimera_vio${ILLIXR_BUILD_SUFFIX} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/PangolinDisplay.cpp"
   )
 endif(Pangolin_FOUND)

@@ -38,3 +38,5 @@ common
 *.pyc
 
 *compile_commands.json
+
+.idea/

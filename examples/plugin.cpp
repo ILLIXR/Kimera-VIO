@@ -1,29 +1,32 @@
 #include <functional>
 
-#include <opencv/cv.hpp>
+#include <opencv2/opencv.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
-#include <math.h>
+#include <cmath>
 #include <eigen3/Eigen/Dense>
+#include <filesystem>
 
 #include "kimera-vio/pipeline/Pipeline.h"
 
-#include "../common/plugin.hpp"
-#include "../common/switchboard.hpp"
-#include "../common/data_format.hpp"
-#include "../common/phonebook.hpp"
-#include "../common/error_util.hpp"
+#include "illixr/plugin.hpp"
+#include "illixr/opencv_data_types.hpp"
+#include "illixr/switchboard.hpp"
+#include "illixr/data_format.hpp"
+#include "illixr/phonebook.hpp"
+#include "illixr/error_util.hpp"
 
 using namespace ILLIXR;
 
 std::string get_path() {
-    const char* KIMERA_ROOT_c_str = std::getenv("KIMERA_ROOT");
-	if (!KIMERA_ROOT_c_str) {
-        ILLIXR::abort("Please define KIMERA_ROOT");
-	}
-	std::string KIMERA_ROOT = std::string{KIMERA_ROOT_c_str};
-    return KIMERA_ROOT + "params/ILLIXR";
+    std::string path = std::string{PARAMS_LOCATION} + "/ILLIXR";
+    if(std::filesystem::is_directory(path))
+        return path;
+    const char* KIMERA_ROOT = std::getenv("KIMERA_ROOT");
+    if (!KIMERA_ROOT)
+        ILLIXR::abort("Parameter files not found, please define KIMERA_ROOT");
+    return std::string{KIMERA_ROOT} + "/ILLIXR";
 }
 
 class kimera_vio : public plugin {
@@ -147,16 +150,16 @@ public:
 
         const auto& cached_state = vio_output->W_State_Blkf_;
         const auto& w_pose_blkf_trans = cached_state.pose_.translation().transpose();
-        const auto& w_pose_blkf_rot = cached_state.pose_.rotation().quaternion();
+        const auto& w_pose_blkf_rot = cached_state.pose_.rotation().toQuaternion();
         const auto& w_vel_blkf = cached_state.velocity_.transpose();
         const auto& imu_bias_gyro = cached_state.imu_bias_.gyroscope().transpose();
         const auto& imu_bias_acc = cached_state.imu_bias_.accelerometer().transpose();
         // Get the pose returned from SLAM
         Eigen::Quaternionf quat = Eigen::Quaternionf{
-            static_cast<float>(w_pose_blkf_rot(0)),
-            static_cast<float>(w_pose_blkf_rot(1)),
-            static_cast<float>(w_pose_blkf_rot(2)),
-            static_cast<float>(w_pose_blkf_rot(3))
+            static_cast<float>(w_pose_blkf_rot.w()),
+            static_cast<float>(w_pose_blkf_rot.x()),
+            static_cast<float>(w_pose_blkf_rot.y()),
+            static_cast<float>(w_pose_blkf_rot.z())
         };
         Eigen::Quaterniond doub_quat = Eigen::Quaterniond{
             w_pose_blkf_rot(0),

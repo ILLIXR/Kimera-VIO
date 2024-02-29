@@ -76,7 +76,7 @@ endif()
 add_subdirectory(third_party)
 
 ### Compile the code
-add_library(${PROJECT_NAME} SHARED "")
+add_library(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX} SHARED "")
 
 ### Add source code for data provider.
 add_subdirectory(include/kimera-vio/dataprovider)
@@ -121,7 +121,7 @@ add_subdirectory(src/imu-frontend)
 add_subdirectory(include/kimera-vio/visualizer)
 add_subdirectory(src/visualizer)
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
   PRIVATE
     opengv
     KimeraRPGO
@@ -134,7 +134,7 @@ target_link_libraries(${PROJECT_NAME}
     gtsam
     gtsam_unstable
 )
-target_include_directories(${PROJECT_NAME}
+target_include_directories(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
   PUBLIC
     ${OpenCV_INCLUDE_DIRS}
     ${GFLAGS_INCLUDE_DIRS}
@@ -146,28 +146,28 @@ target_include_directories(${PROJECT_NAME}
 
 # Pangolin is optional
 if(Pangolin_FOUND)
-  target_link_libraries(${PROJECT_NAME}
+  target_link_libraries(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
     PUBLIC
       ${Pangolin_LIBRARIES}
   )
-  target_include_directories(${PROJECT_NAME}
+  target_include_directories(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
     PUBLIC
       ${Pangolin_INCLUDE_DIRS}
   )
-  target_compile_definitions(${PROJECT_NAME} PRIVATE Pangolin_FOUND=1)
+  target_compile_definitions(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX} PRIVATE Pangolin_FOUND=1)
 else(Pangolin_FOUND)
   message(STATUS "Pangolin not found.")
 endif(Pangolin_FOUND)
 
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wno-unused-parameter -pipe)
+target_compile_options(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX} PRIVATE -Wall -Wextra -Wno-unused-parameter -pipe)
 
 # We would just need to say cxx_std_11 if we were using cmake 3.8
-target_compile_features(${PROJECT_NAME} PUBLIC
+target_compile_features(${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX} PUBLIC
         cxx_auto_type cxx_constexpr cxx_range_for cxx_nullptr cxx_override)
 
 # Add an alias so that library can be used inside the build tree,
 # e.g. when testing
-add_library(kimera_vio::kimera_vio ALIAS kimera_vio)
+add_library(kimera_vio::kimera_vio ALIAS kimera_vio${ILLIXR_BUILD_SUFFIX})
 
 add_executable(stereoVIOEuroc ./examples/KimeraVIO.cpp)
 target_link_libraries(stereoVIOEuroc PUBLIC kimera_vio::kimera_vio)
@@ -175,6 +175,7 @@ target_link_libraries(stereoVIOEuroc PUBLIC kimera_vio::kimera_vio)
 add_library(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} SHARED examples/plugin.cpp)
 target_include_directories(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PRIVATE ${ILLIXR_ROOT})
 target_link_libraries(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PUBLIC kimera_vio::kimera_vio)
+target_compile_definitions(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PUBLIC -DPARAMS_LOCATION=\"${CMAKE_INSTALL_PREFIX}/etc/kimera_vio/params\")
 
 ############################### TESTS ##########################################
 ### Add testing
@@ -307,13 +308,13 @@ configure_package_config_file(
 
 option(EXPORT_KIMERA "Export kimera_vio instead of installing it." OFF)
 if(EXPORT_KIMERA)
-  export(TARGETS ${PROJECT_NAME}
+  export(TARGETS ${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
          FILE kimera_vioTargets.cmake)
-       export(PACKAGE ${PROJECT_NAME})
+       export(PACKAGE ${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX})
 else(EXPORT_KIMERA)
   include(GNUInstallDirs)
   ## First of all, we need to install the library itself.
-  install(TARGETS ${PROJECT_NAME}
+  install(TARGETS ${PROJECT_NAME}${ILLIXR_BUILD_SUFFIX}
       EXPORT kimera_vio-export
       LIBRARY DESTINATION lib
       ARCHIVE DESTINATION lib
