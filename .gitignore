@@ -33,3 +33,8 @@ common
 % Ignore objects
 *.dbg.so
 *.opt.so
+
+% Ignore python bytecode
+*.pyc
+
+*compile_commands.json

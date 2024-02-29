@@ -13,6 +13,7 @@
 
 #include <glog/logging.h>
 
+#include "kimera-vio/frontend/FrontendType.h"
 #include "kimera-vio/utils/Macros.h"
 
 namespace VIO {
@@ -137,7 +138,7 @@ inline bool operator!=(const PipelineParams& lhs, const PipelineParams& rhs) {
 }
 
 template <class T>
-static void parsePipelineParams(const std::string& params_path,
+inline void parsePipelineParams(const std::string& params_path,
                                 T* pipeline_params) {
   CHECK_NOTNULL(pipeline_params);
   static_assert(std::is_base_of<PipelineParams, T>::value,

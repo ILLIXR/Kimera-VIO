@@ -19,12 +19,10 @@
 #include <gtsam/base/Vector.h>
 #include <gtsam/geometry/Pose3.h>
 
-#include "kimera-vio/backend/VioBackEnd-definitions.h"
+#include <optional>
+
+#include "kimera-vio/frontend/FrontendInputPacketBase.h"
 #include "kimera-vio/frontend/StereoFrame.h"
-#include "kimera-vio/frontend/Tracker-definitions.h"
-#include "kimera-vio/imu-frontend/ImuFrontEnd-definitions.h"
-#include "kimera-vio/mesh/Mesh.h"
-#include "kimera-vio/utils/Macros.h"
 
 namespace VIO {
 
@@ -80,35 +78,31 @@ struct ReinitPacket {
   }
 };
 
-class StereoImuSyncPacket : public PipelinePayload {
+class StereoImuSyncPacket : public FrontendInputPacketBase {
  public:
   KIMERA_POINTER_TYPEDEFS(StereoImuSyncPacket);
   KIMERA_DELETE_COPY_CONSTRUCTORS(StereoImuSyncPacket);
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   StereoImuSyncPacket() = delete;
-  StereoImuSyncPacket(const StereoFrame& stereo_frame,
-                      const ImuStampS& imu_stamps,
-                      const ImuAccGyrS& imu_accgyr,
-                      const ReinitPacket& reinit_packet = ReinitPacket());
+  StereoImuSyncPacket(
+      const StereoFrame& stereo_frame,
+      const ImuStampS& imu_stamps,
+      const ImuAccGyrS& imu_accgyr,
+      std::optional<gtsam::NavState> external_odometry = std::nullopt,
+      const ReinitPacket& reinit_packet = ReinitPacket());
   ~StereoImuSyncPacket() = default;
-
-  // TODO delete copy-constructor because it is used in some places!
 
   // Careful, returning references to members can lead to dangling refs.
   inline const StereoFrame& getStereoFrame() const { return stereo_frame_; }
   inline const ImuStampS& getImuStamps() const { return imu_stamps_; }
   inline const ImuAccGyrS& getImuAccGyrs() const { return imu_accgyrs_; }
   inline const ReinitPacket& getReinitPacket() const { return reinit_packet_; }
-  inline const bool getReinitFlag() const {
-    return reinit_packet_.getReinitFlag();
-  }
+  inline bool getReinitFlag() const { return reinit_packet_.getReinitFlag(); }
 
   void print() const;
 
  private:
   const StereoFrame stereo_frame_;
-  const ImuStampS imu_stamps_;
-  const ImuAccGyrS imu_accgyrs_;
   const ReinitPacket reinit_packet_;
 };
 

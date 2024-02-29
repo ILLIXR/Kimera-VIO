@@ -17,15 +17,13 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kimera-vio/backend/RegularVioBackEndParams.h"
-#include "kimera-vio/backend/VioBackEndParams.h"
-#include "kimera-vio/frontend/VisionFrontEndParams.h"
-#include "kimera-vio/imu-frontend/ImuFrontEnd-definitions.h"
+#include "kimera-vio/backend/RegularVioBackendParams.h"
+#include "kimera-vio/backend/VioBackendParams.h"
+#include "kimera-vio/frontend/VisionImuFrontendParams.h"
+#include "kimera-vio/imu-frontend/ImuFrontend-definitions.h"
 #include "kimera-vio/pipeline/PipelineParams.h"
 
 namespace VIO {
-
-DataProviderInterface::DataProviderInterface() {}
 
 DataProviderInterface::~DataProviderInterface() {
   LOG(INFO) << "Data provider destructor called.";
@@ -51,9 +49,9 @@ bool DataProviderInterface::spin() {
   //  b) Call the callbacks in order to send the data.
   if (!shutdown_) {
     left_frame_callback_(
-        VIO::make_unique<Frame>(0, 0, CameraParams(), cv::Mat()));
+        std::make_unique<Frame>(0, 0, CameraParams(), cv::Mat()));
     right_frame_callback_(
-        VIO::make_unique<Frame>(0, 0, CameraParams(), cv::Mat()));
+        std::make_unique<Frame>(0, 0, CameraParams(), cv::Mat()));
     //! Usually you would use only one of these
     imu_single_callback_(ImuMeasurement());
     imu_multi_callback_(ImuMeasurements());
@@ -62,6 +60,10 @@ bool DataProviderInterface::spin() {
   }
 
   // 3) Once the dataset spin has finished, exit with false.
+  return false;
+}
+
+bool DataProviderInterface::hasData() const {
   return false;
 }
 

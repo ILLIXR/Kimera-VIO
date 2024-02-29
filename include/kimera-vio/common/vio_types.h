@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <utility>  // for forward
 #include <vector>
 
@@ -34,8 +35,7 @@ using Matrixf = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>;
 using Matrices3f = std::vector<Matrix3f, Eigen::aligned_allocator<Matrix3f>>;
 using Vectors3f = std::vector<Vector3f, Eigen::aligned_allocator<Vector3f>>;
 
-// TODO(Toni): make a class enum.
-enum KeypointStatus {
+enum class KeypointStatus {
   VALID,
   NO_LEFT_RECT,
   NO_RIGHT_RECT,
@@ -43,13 +43,20 @@ enum KeypointStatus {
   FAILED_ARUN
 };
 
+using Depth = double;
+using Depths = std::vector<Depth>;
+
+using DMatchVec = std::vector<cv::DMatch>;
+
 // Definitions relevant to frame types
 using FrameId = std::uint64_t;  // Frame id is used as the index of gtsam symbol
                                 // (not as a gtsam key).
 using PlaneId = std::uint64_t;
 using LandmarkId = long int;  // -1 for invalid landmarks. // int would be too
-                              // small if it is 16 bits!
+                            // small if it is 16 bits!
 using LandmarkIds = std::vector<LandmarkId>;
+using Landmark = gtsam::Point3;
+using Landmarks = std::vector<Landmark, Eigen::aligned_allocator<Landmark>>;
 using LandmarkCV = cv::Point3d;
 using LandmarksCV = std::vector<LandmarkCV>;
 enum class LandmarkType { SMART, PROJECTION };
@@ -57,20 +64,27 @@ using KeypointCV = cv::Point2f;
 using KeypointsCV = std::vector<KeypointCV>;
 using StatusKeypointCV = std::pair<KeypointStatus, KeypointCV>;
 using StatusKeypointsCV = std::vector<StatusKeypointCV>;
-using BearingVectors = std::vector<Vector3, Eigen::aligned_allocator<Vector3>>;
-
-
-// TODO(Toni): move make unique and  to underlying to another file...
-// Add compatibility for c++11's lack of make_unique.
-template <typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args&&... args) {
-  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
+using BearingVector = gtsam::Vector3;
+using BearingVectors =
+    std::vector<BearingVector, Eigen::aligned_allocator<BearingVector>>;
 
 // Add way of printing strongly typed enums (enum class).
 template <typename E>
 constexpr typename std::underlying_type<E>::type to_underlying(E e) noexcept {
   return static_cast<typename std::underlying_type<E>::type>(e);
 }
+
+template <typename Derived, typename Base>
+std::unique_ptr<Derived> castUnique(std::unique_ptr<Base>&& base) {
+  auto derived = dynamic_cast<Derived*>(base.get());
+  if (!derived) {
+    return nullptr;
+  }
+
+  base.release();
+  return std::unique_ptr<Derived>(derived);
+}
+
+using LandmarksMap = std::unordered_map<LandmarkId, gtsam::Point3>;
 
 }  // namespace VIO

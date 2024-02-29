@@ -18,7 +18,8 @@
 #include <string>
 
 #include "kimera-vio/frontend/Camera.h"
-#include "kimera-vio/frontend/StereoImuSyncPacket.h"
+#include "kimera-vio/frontend/VisionImuFrontend-definitions.h"
+#include "kimera-vio/frontend/DepthFrame.h"
 #include "kimera-vio/pipeline/Pipeline-definitions.h"
 #include "kimera-vio/utils/Macros.h"
 
@@ -30,12 +31,14 @@ class DataProviderInterface {
   KIMERA_POINTER_TYPEDEFS(DataProviderInterface);
   //! IMU input callbacks come in two flavours:
   //! - Single: allows to add only one single measurement at a time.
-  //! - Multi: allows to add a bunck of measurements at a time.
+  //! - Multi: allows to add a bunch of measurements at a time.
   typedef std::function<void(const ImuMeasurement&)> ImuSingleInputCallback;
   typedef std::function<void(const ImuMeasurements&)> ImuMultiInputCallback;
   typedef std::function<void(Frame::UniquePtr)> FrameInputCallback;
+  typedef std::function<void(DepthFrame::UniquePtr)> DepthFrameInputCallback;
+  typedef std::function<void(const ExternalOdomMeasurement&)> ExternalOdomInputCallback;
 
-  DataProviderInterface();
+  DataProviderInterface() = default;
   virtual ~DataProviderInterface();
 
   // The derived classes need to implement this function!
@@ -48,6 +51,12 @@ class DataProviderInterface {
    * @return True if the dataset still has data, false otherwise.
    */
   virtual bool spin();
+
+  /**
+   * @brief return whether data still exists on this interface
+   * @return True if the dataset still has data
+   */
+  virtual bool hasData() const;
 
   /**
    * @brief shutdown Call if you want to explicitly stop the data provider.
@@ -73,6 +82,14 @@ class DataProviderInterface {
   inline void registerRightFrameCallback(const FrameInputCallback& callback) {
     right_frame_callback_ = callback;
   }
+  inline void registerDepthFrameCallback(
+      const DepthFrameInputCallback& callback) {
+    depth_frame_callback_ = callback;
+  }
+  inline void registerExternalOdomCallback(
+      const ExternalOdomInputCallback& callback) {
+    external_odom_callback_ = callback;
+  }
 
  protected:
   // Vio callbacks. These functions should be called once data is available for
@@ -81,6 +98,8 @@ class DataProviderInterface {
   ImuMultiInputCallback imu_multi_callback_;
   FrameInputCallback left_frame_callback_;
   FrameInputCallback right_frame_callback_;
+  DepthFrameInputCallback depth_frame_callback_;
+  ExternalOdomInputCallback external_odom_callback_;
 
   // Shutdown switch to stop data provider.
   std::atomic_bool shutdown_ = {false};

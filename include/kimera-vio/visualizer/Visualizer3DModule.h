@@ -14,11 +14,11 @@
 
 #pragma once
 
-#include <vector>
-
 #include <glog/logging.h>
 
-#include "kimera-vio/backend/VioBackEnd-definitions.h"
+#include <vector>
+
+#include "kimera-vio/backend/VioBackend-definitions.h"
 #include "kimera-vio/mesh/Mesher-definitions.h"
 #include "kimera-vio/pipeline/PipelineModule.h"
 #include "kimera-vio/utils/Macros.h"
@@ -35,23 +35,31 @@ class VisualizerModule
   KIMERA_DELETE_COPY_CONSTRUCTORS(VisualizerModule);
   using MISO = MISOPipelineModule<VisualizerInput, DisplayInputBase>;
 
-  using VizFrontendInput = FrontendOutput::Ptr;
+  using VizFrontendInput = FrontendOutputPacketBase::Ptr;
   using VizBackendInput = BackendOutput::Ptr;
   using VizMesherInput = MesherOutput::Ptr;
 
   VisualizerModule(OutputQueue* output_queue,
                    bool parallel_run,
+                   bool use_lcd,
                    Visualizer3D::UniquePtr visualizer);
   virtual ~VisualizerModule() = default;
 
-  //! Callbacks to fill queues: they should be all lighting fast.
   inline void fillFrontendQueue(const VizFrontendInput& frontend_payload) {
+    if (!frontend_payload || !frontend_payload->is_keyframe_) {
+      return;
+    }
+
     frontend_queue_.push(frontend_payload);
   }
+
   inline void fillBackendQueue(const VizBackendInput& backend_payload) {
     backend_queue_.push(backend_payload);
   }
+
   void fillMesherQueue(const VizMesherInput& mesher_payload);
+
+  inline void disableMesherQueue() { mesher_queue_.reset(nullptr); }
 
  protected:
   //! Synchronize input queues. Currently doing it in a crude way:

@@ -15,8 +15,9 @@
 #pragma once
 
 #include <Eigen/Eigen>
-
 #include <opencv2/features2d.hpp>
+#include <vector>
+#include <optional>
 
 #include "kimera-vio/frontend/Frame.h"
 #include "kimera-vio/frontend/feature-detector/FeatureDetector-definitions.h"
@@ -35,7 +36,17 @@ class FeatureDetector {
   virtual ~FeatureDetector() = default;
 
  public:
-  void featureDetection(Frame* cur_frame);
+  void featureDetection(Frame* cur_frame,
+                        std::optional<cv::Mat> R = std::nullopt);
+
+  /**
+   * @brief rawFeatureDetection Raw feature detection: in image, out keypoints
+   * @param img
+   * @return keypoints
+   */
+  std::vector<cv::KeyPoint> rawFeatureDetection(
+      const cv::Mat& img,
+      const cv::Mat& mask = cv::Mat());
 
  private:
   // Returns landmark_count (updated from the new keypoints),

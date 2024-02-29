@@ -61,7 +61,7 @@ class VioParamsFixture : public ::testing::Test {
   CameraParams left_cam_params_;
   CameraParams right_cam_params_;
   BackendParams backend_params_;
-  RegularVioBackEndParams regular_backend_params_;
+  RegularVioBackendParams regular_backend_params_;
   FrontendParams frontend_params_;
   LoopClosureDetectorParams lcd_params_;
 };
@@ -101,6 +101,36 @@ TEST_F(VioParamsFixture, defaultConstructorWithParsing) {
   EXPECT_NE(*vio_params.backend_params_, backend_params_);
   EXPECT_EQ(vio_params.frontend_params_, frontend_params_);
   EXPECT_EQ(vio_params.imu_params_, imu_params_);
+  ASSERT_EQ(vio_params.camera_params_.size(), 2u);
+  EXPECT_EQ(vio_params.camera_params_.at(0), left_cam_params_);
+  EXPECT_EQ(vio_params.camera_params_.at(1), right_cam_params_);
+  EXPECT_EQ(vio_params.lcd_params_, lcd_params_);
+}
+
+TEST_F(VioParamsFixture, explicitConstructorCorrect) {
+  // Use vio params parser
+  VioParams vio_params(FLAGS_test_data_path + "/EurocParams/" + VioParams::kPipelineFilename,
+                       FLAGS_test_data_path + "/AlternateTestParams/" + VioParams::kImuFilename,
+                       FLAGS_test_data_path + "/EurocParams/" + VioParams::kLeftCameraFilename,
+                       FLAGS_test_data_path + "/EurocParams/" + VioParams::kRightCameraFilename,
+                       FLAGS_test_data_path + "/EurocParams/" + VioParams::kFrontendFilename,
+                       FLAGS_test_data_path + "/EurocParams/" + VioParams::kBackendFilename,
+                       FLAGS_test_data_path + "/EurocParams/" + VioParams::kLcdFilename,
+                       FLAGS_test_data_path + "/EurocParams/" + VioParams::kDisplayFilename,
+                       "",
+                       true);
+
+  // Parse yourself
+  parseParamsManually();
+
+  EXPECT_EQ(vio_params.frontend_type_, FrontendType::kStereoImu);
+  EXPECT_EQ(vio_params.backend_type_, BackendType::kStructuralRegularities);
+  EXPECT_EQ(vio_params.parallel_run_, 1);
+  EXPECT_EQ(*vio_params.backend_params_, regular_backend_params_);
+  EXPECT_NE(*vio_params.backend_params_, backend_params_);
+  EXPECT_EQ(vio_params.frontend_params_, frontend_params_);
+  // file is explicitly different
+  EXPECT_NE(vio_params.imu_params_, imu_params_);
   ASSERT_EQ(vio_params.camera_params_.size(), 2u);
   EXPECT_EQ(vio_params.camera_params_.at(0), left_cam_params_);
   EXPECT_EQ(vio_params.camera_params_.at(1), right_cam_params_);

@@ -21,6 +21,7 @@ namespace VIO {
 
 VisualizerModule::VisualizerModule(OutputQueue* output_queue,
                                    bool parallel_run,
+                                   bool use_lcd,
                                    Visualizer3D::UniquePtr visualizer)
     : MISOPipelineModule<VisualizerInput, DisplayInputBase>(output_queue,
                                                             "Visualizer",
@@ -32,7 +33,7 @@ VisualizerModule::VisualizerModule(OutputQueue* output_queue,
   if (visualizer_->visualization_type_ ==
       VisualizationType::kMesh2dTo3dSparse) {
     // Activate mesher queue if we are going to visualize the mesh.
-    mesher_queue_ = VIO::make_unique<ThreadsafeQueue<VizMesherInput>>(
+    mesher_queue_ = std::make_unique<ThreadsafeQueue<VizMesherInput>>(
         "visualizer_mesher_queue");
   }
 }
@@ -49,9 +50,6 @@ VisualizerModule::InputUniquePtr VisualizerModule::getInputPacket() {
   bool queue_state = false;
   VizBackendInput backend_payload = nullptr;
   if (PIO::parallel_run_) {
-    // TODO(Toni): if the mesher_ is not running (it is optional) then there is
-    // no module filling this queue, and the visualizer gets stuck at this
-    // pop blocking :(
     queue_state = backend_queue_.popBlocking(backend_payload);
   } else {
     queue_state = backend_queue_.pop(backend_payload);
@@ -68,9 +66,9 @@ VisualizerModule::InputUniquePtr VisualizerModule::getInputPacket() {
   CHECK(backend_payload);
   const Timestamp& timestamp = backend_payload->timestamp_;
 
-  // Look for the synchronized packet in frontend payload queue
+  // Look for the synchronized packet in Frontend payload queue
   // This should always work, because it should not be possible to have
-  // a backend payload without having a frontend one first!
+  // a Backend payload without having a Frontend one first!
   VizFrontendInput frontend_payload = nullptr;
   PIO::syncQueue(timestamp, &frontend_queue_, &frontend_payload);
   CHECK(frontend_payload);
@@ -85,7 +83,7 @@ VisualizerModule::InputUniquePtr VisualizerModule::getInputPacket() {
   }
 
   // Push the synced messages to the visualizer's input queue
-  return VIO::make_unique<VisualizerInput>(
+  return std::make_unique<VisualizerInput>(
       timestamp, mesher_payload, backend_payload, frontend_payload);
 }
 
@@ -99,7 +97,10 @@ void VisualizerModule::shutdownQueues() {
   LOG(INFO) << "Shutting down queues for: " << name_id_;
   frontend_queue_.shutdown();
   backend_queue_.shutdown();
-  if (mesher_queue_) mesher_queue_->shutdown();
+  if (mesher_queue_) {
+    mesher_queue_->shutdown();
+  }
+
   // This shutdowns the output queue as well.
   MISO::shutdownQueues();
 }
@@ -109,9 +110,9 @@ bool VisualizerModule::hasWork() const {
   LOG_IF(WARNING,
          (mesher_queue_ ? mesher_queue_->empty() : false) &&
              (!backend_queue_.empty() || !frontend_queue_.empty()))
-      << "Mesher queue is empty, yet backend or frontend queue is not!"
+      << "Mesher queue is empty, yet Backend or Frontend queue is not!"
          "This should not happen since Mesher runs at Backend pace!";
-  // We don't check frontend queue because it runs faster than the other two
+  // We don't check Frontend queue because it runs faster than the other two
   // queues.
   return mesher_queue_ ? !mesher_queue_->empty() : !backend_queue_.empty();
 }

@@ -14,13 +14,13 @@
 
 #pragma once
 
-#include <stdlib.h>
 #include <atomic>
+#include <cstdlib>
 #include <limits>  // for numeric_limits<>
+#include <opencv2/opencv.hpp>
+#include <optional>
 #include <utility>  // for move
 #include <vector>
-
-#include <opencv2/opencv.hpp>
 
 #include "kimera-vio/common/vio_types.h"
 #include "kimera-vio/logging/Logger.h"
@@ -36,12 +36,18 @@ class Mesher {
   KIMERA_POINTER_TYPEDEFS(Mesher);
   KIMERA_DELETE_COPY_CONSTRUCTORS(Mesher);
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  // Vector of triplets of vertex indices, each element corresponds to 3
+  // triangle vertices ids.
+  using VertexIdx = size_t;  //! A hash value (can be very large!).
+  using TriVtxIndices = std::array<VertexIdx, 3>;
+  using MeshIndices = std::vector<TriVtxIndices>;
 
  public:
   explicit Mesher(const MesherParams& mesher_params,
                   const bool& serialize_meshes = false);
   virtual ~Mesher() = default;
 
+ public:
   /**
    * @brief Mesher::spinOnce Process only one minimal packet of information.
    * @param input Minimal input for the Mesher to do its work.
@@ -49,7 +55,7 @@ class Mesher {
    */
   virtual MesherOutput::UniquePtr spinOnce(const MesherInput& input);
 
-  /* ------------------------------------------------------------------------ */
+ public:
   // Update mesh: update structures keeping memory of the map before
   // visualization. It also returns a mesh_2d which represents the triangulation
   // in the 2d image.
@@ -63,7 +69,7 @@ class Mesher {
   void updateMesh3D(const PointsWithIdMap& points_with_id_VIO,
                     const KeypointsCV& keypoints,
                     const std::vector<KeypointStatus>& keypoints_status,
-                    const std::vector<Vector3>& keypoints_3d,
+                    const BearingVectors& keypoints_3d,
                     const LandmarkIds& landmarks,
                     const gtsam::Pose3& left_camera_pose,
                     Mesh2D* mesh_2d = nullptr,
@@ -84,7 +90,7 @@ class Mesher {
   void appendNonVioStereoPoints(
       const LandmarkIds& landmarks,
       const std::vector<KeypointStatus>& keypoints_status,
-      const std::vector<Vector3>& keypoints_3d,
+      const BearingVectors& keypoints_3d,
       const gtsam::Pose3& left_cam_pose,
       PointsWithIdMap* points_with_id_stereo) const;
 
@@ -112,6 +118,50 @@ class Mesher {
       const Frame& frame,
       const std::vector<size_t>& selected_indices);
 
+  /**
+   * @brief createMesh2D Creates a 2D Mesh out of given keypoints inside the
+   * given image size. It effectively calls Delaunay triangulation over the
+   * 2D keypoints and returns a Mesh2D (without lmk ids).
+   * @param keypoints
+   * @param image_size
+   * @param mesh_2d 2D mesh that is delaunay triangulation of the given
+   * keypoints.
+   */
+  static void createMesh2D(const KeypointsCV& keypoints, Mesh2D* mesh_2d) {
+    CHECK_NOTNULL(mesh_2d);
+    CHECK_EQ(mesh_2d->getNumberOfPolygons(), 0u);
+    CHECK_EQ(mesh_2d->getNumberOfUniqueVertices(), 0u);
+    MeshIndices vtx_indices;
+    std::vector<cv::Vec6f> tri =
+        Mesher::computeDelaunayTriangulation(keypoints, &vtx_indices);
+
+    // Iterate over the 2d mesh triangles.
+    for (size_t i = 0u; i < tri.size(); i++) {
+      const cv::Vec6f& triangle_2d = tri.at(i);
+      const TriVtxIndices& tri_vtx_indices = vtx_indices.at(i);
+
+      // Iterate over each vertex (pixel) of the triangle.
+      Mesh2D::Polygon polygon_2d;
+      for (size_t j = 0u; j < triangle_2d.rows / 2u; j++) {
+        const cv::Point2f vtx(triangle_2d[j * 2u], triangle_2d[j * 2u + 1u]);
+        polygon_2d.push_back(Mesh2D::VertexType(tri_vtx_indices[j], vtx));
+      }
+      CHECK_EQ(polygon_2d.size(), mesh_2d->getMeshPolygonDimension());
+
+      // Finally, add polygon to mesh
+      mesh_2d->addPolygonToMesh(polygon_2d);
+    }
+  }
+
+  /*
+   * Triangulate support points for the requested image
+   * Usage of Triangle inspired From: LIBELAS
+   * http://www.cvlibs.net/software/libelas/
+   */
+  static std::vector<cv::Vec6f> computeDelaunayTriangulation(
+      const KeypointsCV& keypoints,
+      MeshIndices* vtx_indices = nullptr);
+
  private:
   // Provide Mesh 3D in read-only mode.
   // Not the nicest to send a const &, should maybe use shared_ptr
@@ -133,8 +183,8 @@ class Mesher {
       const double& d12,
       const double& d23,
       const double& d31,
-      boost::optional<double&> minSide_out = boost::none,
-      boost::optional<double&> maxSide_out = boost::none) const;
+      double* minSide_out = nullptr,
+      double* maxSide_out = nullptr) const;
 
   /* ------------------------------------------------------------------------ */
   // For a triangle defined by the 3d points p1, p2, and p3
@@ -363,10 +413,18 @@ class Mesher {
   void getVerticesMesh(cv::Mat* vertices_mesh) const;
   void getPolygonsMesh(cv::Mat* polygons_mesh) const;
 
-  /* ------------------------------------------------------------------------ */
+  /**
+   * @brief createMesh2dImpl
+   * @param img_size
+   * @param keypoints_to_triangulate
+   * @param vtx_indices Returns each vertex id of the vertices of the triangles
+   * in order
+   * @return
+   */
   static std::vector<cv::Vec6f> createMesh2dImpl(
       const cv::Size& img_size,
-      std::vector<cv::Point2f>* keypoints_to_triangulate);
+      const KeypointsCV& keypoints_to_triangulate,
+      MeshIndices* vtx_indices = nullptr);
 
   static void createMesh2dVIO(
       std::vector<cv::Vec6f>* triangulation_2D,
@@ -381,7 +439,7 @@ class Mesher {
       const LandmarkIds& landmarks,
       const std::vector<KeypointStatus>& keypoints_status,
       const KeypointsCV& keypoints,
-      const std::vector<Vector3>& keypoints_3d,
+      const BearingVectors& keypoints_3d,
       const cv::Size& img_size,
       std::vector<std::pair<LandmarkId, gtsam::Point3>>* lmk_with_id_stereo =
           nullptr);

@@ -14,21 +14,28 @@
 
 #include "kimera-vio/mesh/Mesher.h"
 
-#include <utility>  // for make_pair
-#include <vector>
-
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <math.h>
+
 #include <algorithm>
 #include <opencv2/imgproc.hpp>
-
-// For serialization of meshes
-#include <boost/archive/text_iarchive.hpp>
-#include <boost/archive/text_oarchive.hpp>
+#include <utility>  // for make_pair
+#include <vector>
 
 #include "kimera-vio/utils/Statistics.h"
 #include "kimera-vio/utils/Timer.h"
+#include "kimera-vio/utils/UtilsNumerical.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <triangle/triangle.h>
+
+#ifdef __cplusplus
+}
+#endif
 
 // General functionality for the mesher.
 DEFINE_bool(add_extra_lmks_from_stereo,
@@ -64,9 +71,6 @@ DEFINE_bool(log_histogram_2D,
             " It logs the raw and smoothed histogram.");
 
 // Mesh filters.
-DEFINE_double(max_grad_in_triangle,
-              -1,
-              "Maximum allowed gradient inside a triangle.");
 DEFINE_double(min_ratio_btw_largest_smallest_side,
               0.5,
               "Minimum ratio between largest and smallest "
@@ -99,9 +103,9 @@ DEFINE_double(distance_tolerance_plane_plane_association,
               "plane.");
 DEFINE_bool(do_double_association,
             true,
-            "Do double plane association of backend plane with multiple "
+            "Do double plane association of Backend plane with multiple "
             "segmented planes. Otherwise search for another possible "
-            "backend plane for the segmented plane.");
+            "Backend plane for the segmented plane.");
 DEFINE_bool(only_associate_a_polygon_to_a_single_plane,
             true,
             "Limit association of a particular polygon to a single plane. "
@@ -178,12 +182,12 @@ namespace VIO {
 
 /* -------------------------------------------------------------------------- */
 Mesher::Mesher(const MesherParams& mesher_params, const bool& serialize_meshes)
-    : mesher_params_(mesher_params),
-      mesh_2d_(),
+    : mesh_2d_(),
       mesh_3d_(),
+      mesher_params_(mesher_params),
       mesher_logger_(nullptr),
       serialize_meshes_(serialize_meshes) {
-  mesher_logger_ = VIO::make_unique<MesherLogger>();
+  mesher_logger_ = std::make_unique<MesherLogger>();
 
   // Create z histogram.
   std::vector<int> hist_size = {FLAGS_z_histogram_bins};
@@ -214,7 +218,7 @@ Mesher::Mesher(const MesherParams& mesher_params, const bool& serialize_meshes)
 
 MesherOutput::UniquePtr Mesher::spinOnce(const MesherInput& input) {
   MesherOutput::UniquePtr mesher_output_payload =
-      VIO::make_unique<MesherOutput>(input.timestamp_);
+      std::make_unique<MesherOutput>(input.timestamp_);
   updateMesh3D(
       input,
       // TODO REMOVE THIS FLAG MAKE MESH_2D Optional!
@@ -234,6 +238,78 @@ MesherOutput::UniquePtr Mesher::spinOnce(const MesherInput& input) {
   return mesher_output_payload;
 }
 
+std::vector<cv::Vec6f> Mesher::computeDelaunayTriangulation(
+    const KeypointsCV& keypoints,
+    MeshIndices* vtx_indices) {
+  // input/output structure for triangulation
+  struct triangulateio in, out;
+  int32_t k;
+
+  // Input number of points and point list
+  in.numberofpoints = keypoints.size();
+  in.pointlist = (float*)malloc(in.numberofpoints * 2 * sizeof(float));
+  k = 0;
+  for (int32_t i = 0; i < static_cast<int32_t>(keypoints.size()); i++) {
+    in.pointlist[k++] = keypoints[i].x;
+    in.pointlist[k++] = keypoints[i].y;
+  }
+  in.numberofpointattributes = 0;
+  in.pointattributelist = NULL;
+  in.pointmarkerlist = NULL;
+  in.numberofsegments = 0;
+  in.numberofholes = 0;
+  in.numberofregions = 0;
+  in.regionlist = NULL;
+
+  // outputs
+  out.pointlist = NULL;
+  out.pointattributelist = NULL;
+  out.pointmarkerlist = NULL;
+  out.trianglelist = NULL;
+  out.triangleattributelist = NULL;
+  out.neighborlist = NULL;
+  out.segmentlist = NULL;
+  out.segmentmarkerlist = NULL;
+  out.edgelist = NULL;
+  out.edgemarkerlist = NULL;
+
+  // do triangulation (z=zero-based, n=neighbors, Q=quiet, B=no boundary
+  // markers)
+  char parameters[] = "zneQB";
+  ::triangulate(parameters, &in, &out, NULL);
+
+  // put resulting triangles into vector tri
+  // triangle structure is an array that holds the triangles 3 corners
+  // Stores one point and the remainder in a counterclockwise order
+  std::vector<cv::Vec6f> tri;
+  k = 0;
+  TriVtxIndices tri_vtx_indices;
+  for (int32_t i = 0; i < out.numberoftriangles; i++) {
+    // Find vertex ids!
+    if (vtx_indices) {
+      tri_vtx_indices[0] = out.trianglelist[k];
+      tri_vtx_indices[1] = out.trianglelist[k + 1];
+      tri_vtx_indices[2] = out.trianglelist[k + 2];
+      vtx_indices->push_back(tri_vtx_indices);
+    }
+    tri.push_back(cv::Vec6f(keypoints[out.trianglelist[k]].x,
+                            keypoints[out.trianglelist[k]].y,
+                            keypoints[out.trianglelist[k + 1]].x,
+                            keypoints[out.trianglelist[k + 1]].y,
+                            keypoints[out.trianglelist[k + 2]].x,
+                            keypoints[out.trianglelist[k + 2]].y));
+    k += 3;
+  }
+
+  // free memory used for triangulation
+  free(in.pointlist);
+  free(out.pointlist);
+  free(out.trianglelist);
+
+  // return triangles
+  return tri;
+}
+
 /* -------------------------------------------------------------------------- */
 // For a triangle defined by the 3d points p1, p2, and p3
 // compute ratio between largest side and smallest side (how elongated it is).
@@ -241,8 +317,8 @@ double Mesher::getRatioBetweenSmallestAndLargestSide(
     const double& d12,
     const double& d23,
     const double& d31,
-    boost::optional<double&> minSide_out,
-    boost::optional<double&> maxSide_out) const {
+    double* minSide_out,
+    double* maxSide_out) const {
   // Measure sides.
   double minSide = std::min(d12, std::min(d23, d31));
   double maxSide = std::max(d12, std::max(d23, d31));
@@ -458,11 +534,11 @@ void Mesher::populate3dMesh(const std::vector<cv::Vec6f>& mesh_2d_pixels,
       const LandmarkId& lmk_id(
           Frame::findLmkIdFromPixel(pixel, keypoints, landmarks));
       if (lmk_id == -1) {
-        //CHECK_NE(lmk_id, -1) << "Could not find lmk_id: " << lmk_id
+        // CHECK_NE(lmk_id, -1) << "Could not find lmk_id: " << lmk_id
         //  << " for pixel: " << pixel << " in keypoints:\n "
         //  << keypoints;
         LOG(ERROR) << "Could not find lmk_id: " << lmk_id
-          << " for pixel: " << pixel;
+                   << " for pixel: " << pixel;
         break;
       }
 
@@ -695,7 +771,6 @@ void Mesher::clusterNormalsPerpendicularToAxis(
     const double& tolerance,
     std::vector<int>* cluster_normals_idx) {
   size_t idx = 0;
-  static constexpr bool log_normals = false;
   std::vector<cv::Point3f> cluster_normals;
   for (const cv::Point3f& normal : normals) {
     if (isNormalPerpendicularToAxis(axis, normal, tolerance)) {
@@ -1248,9 +1323,9 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
   if (planes.size() == 0) {
     // There are no previous planes, data association unnecessary, just copy
     // segmented planes to output planes.
-    VLOG(0) << "No planes in backend, just copy the " << segmented_planes.size()
+    VLOG(0) << "No planes in Backend, just copy the " << segmented_planes.size()
             << " segmented planes to the set of "
-            << "backend planes, skipping data association.";
+            << "Backend planes, skipping data association.";
     *non_associated_planes = segmented_planes;
   } else {
     // Planes tmp will contain the new segmented planes.
@@ -1283,7 +1358,7 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
                         backend_plane_index) == associated_plane_ids.end()) {
             // It is the first time we associate this plane.
             // Update lmk ids in plane.
-            VLOG(10) << "Plane from backend with id "
+            VLOG(10) << "Plane from Backend with id "
                      << gtsam::DefaultKeyFormatter(
                             plane_backend.getPlaneSymbol().key())
                      << " has been associated with segmented plane: "
@@ -1306,8 +1381,8 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
             break;
           } else {
             // Continue, to see if we can associate the current segmented plane
-            // to another backend plane.
-            LOG(ERROR) << "Double plane association of backend plane: "
+            // to another Backend plane.
+            LOG(ERROR) << "Double plane association of Backend plane: "
                        << gtsam::DefaultKeyFormatter(
                               plane_backend.getPlaneSymbol().key())
                        << " with another segmented plane: "
@@ -1315,13 +1390,13 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
                               segmented_plane.getPlaneSymbol().key())
                        << "\n.";
             if (FLAGS_do_double_association) {
-              LOG(ERROR) << "Doing double plane association of backend plane.";
+              LOG(ERROR) << "Doing double plane association of Backend plane.";
               is_segmented_plane_associated = true;
               break;
             } else {
               LOG(ERROR)
-                  << "Avoiding double plane association of backend plane. "
-                  << "Searching instead for another possible backend plane for "
+                  << "Avoiding double plane association of Backend plane. "
+                  << "Searching instead for another possible Backend plane for "
                      "this"
                      " segmented plane.";
               continue;
@@ -1331,7 +1406,7 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
           VLOG(0) << "Plane "
                   << gtsam::DefaultKeyFormatter(
                          plane_backend.getPlaneSymbol().key())
-                  << " from backend not associated to new segmented plane "
+                  << " from Backend not associated to new segmented plane "
                   << gtsam::DefaultKeyFormatter(
                          segmented_plane.getPlaneSymbol())
                   << "\n\tSegmented normal: " << segmented_plane.normal_
@@ -1343,11 +1418,11 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
 
       if (!is_segmented_plane_associated) {
         // The segmented plane could not be associated to any existing plane
-        // in the backend...
+        // in the Backend...
         // Add it as a new plane.
         VLOG(0) << "Add plane with id "
                 << gtsam::DefaultKeyFormatter(segmented_plane.getPlaneSymbol())
-                << " as a new plane for the backend.";
+                << " as a new plane for the Backend.";
         // WARNING by pushing we are also associating segmented planes between
         // them, do we want this? Maybe yes because we have some repeated
         // segmented planes that are very similar, but then what's up with the
@@ -1359,7 +1434,7 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
     // Update planes.
     // Cleans planes that have not been updated
     // Which is not necessarily good, because the segmenter might differ from
-    // backend and we will not do expectation maximization anymore... plus
+    // Backend and we will not do expectation maximization anymore... plus
     // it makes the visualizer not work...
     //*planes = planes_tmp;
   }
@@ -1371,7 +1446,7 @@ void Mesher::associatePlanes(const std::vector<Plane>& segmented_planes,
 void Mesher::updateMesh3D(const PointsWithIdMap& points_with_id_VIO,
                           const KeypointsCV& keypoints,
                           const std::vector<KeypointStatus>& keypoints_status,
-                          const std::vector<Vector3>& keypoints_3d,
+                          const BearingVectors& keypoints_3d,
                           const LandmarkIds& landmarks,
                           const gtsam::Pose3& left_camera_pose,
                           Mesh2D* mesh_2d,
@@ -1445,11 +1520,19 @@ void Mesher::updateMesh3D(const MesherInput& mesher_payload,
                           std::vector<cv::Vec6f>* mesh_2d_for_viz) {
   const StereoFrame& stereo_frame =
       mesher_payload.frontend_output_->stereo_frame_lkf_;
+  const StatusKeypointsCV& right_keypoints =
+      stereo_frame.right_keypoints_rectified_;
+  std::vector<KeypointStatus> right_keypoint_status;
+  right_keypoint_status.reserve(right_keypoints.size());
+  for (const StatusKeypointCV& kpt : right_keypoints) {
+    right_keypoint_status.push_back(kpt.first);
+  }
+
   updateMesh3D(mesher_payload.backend_output_->landmarks_with_id_map_,
-               stereo_frame.getLeftFrame().keypoints_,
-               stereo_frame.right_keypoints_status_,
+               stereo_frame.left_frame_.keypoints_,
+               right_keypoint_status,
                stereo_frame.keypoints_3d_,
-               stereo_frame.getLeftFrame().landmarks_,
+               stereo_frame.left_frame_.landmarks_,
                mesher_payload.backend_output_->W_State_Blkf_.pose_.compose(
                    mesher_params_.B_Pose_camLrect_),
                mesh_2d,
@@ -1462,7 +1545,7 @@ void Mesher::updateMesh3D(const MesherInput& mesher_payload,
 void Mesher::appendNonVioStereoPoints(
     const LandmarkIds& landmarks,
     const std::vector<KeypointStatus>& keypoints_status,
-    const std::vector<Vector3>& keypoints_3d,
+    const BearingVectors& keypoints_3d,
     const gtsam::Pose3& left_cam_pose,
     PointsWithIdMap* points_with_id_stereo) const {
   CHECK_NOTNULL(points_with_id_stereo);
@@ -1544,7 +1627,7 @@ void Mesher::appendLmkIdsOfPolygon(
     if (it == lmk_ids->end()) {
       // The lmk id is not present in the lmk_ids vector, add it.
       if (FLAGS_add_extra_lmks_from_stereo) {
-        // Only add lmks that are used in the backend (time-horizon).
+        // Only add lmks that are used in the Backend (time-horizon).
         // This is just needed when adding extra lmks from stereo...
         // We are assuming lmk_ids has already only points in time-horizon,
         // so no need to check them as well.
@@ -1565,11 +1648,11 @@ void Mesher::appendLmkIdsOfPolygon(
 /* -------------------------------------------------------------------------- */
 void Mesher::getVerticesMesh(cv::Mat* vertices_mesh) const {
   CHECK_NOTNULL(vertices_mesh);
-  mesh_3d_.convertVerticesMeshToMat(vertices_mesh);
+  mesh_3d_.getVerticesMeshToMat(vertices_mesh);
 }
 void Mesher::getPolygonsMesh(cv::Mat* polygons_mesh) const {
   CHECK_NOTNULL(polygons_mesh);
-  mesh_3d_.convertPolygonsMeshToMat(polygons_mesh);
+  mesh_3d_.getPolygonsMeshToMat(polygons_mesh);
 }
 
 void Mesher::serializeMeshes() {
@@ -1620,7 +1703,7 @@ void Mesher::createMesh2dVIO(
   }
 
   // Get a triangulation for all valid keypoints.
-  *triangulation_2D = createMesh2dImpl(img_size, &keypoints_for_mesh);
+  *triangulation_2D = createMesh2dImpl(img_size, keypoints_for_mesh);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1628,10 +1711,10 @@ void Mesher::createMesh2dVIO(
 // Returns the actual keypoints used to perform the triangulation.
 std::vector<cv::Vec6f> Mesher::createMesh2dImpl(
     const cv::Size& img_size,
-    KeypointsCV* keypoints_to_triangulate) {
-  CHECK_NOTNULL(keypoints_to_triangulate);
+    const KeypointsCV& keypoints_to_triangulate,
+    MeshIndices* vtx_indices) {
   // Nothing to triangulate.
-  if (keypoints_to_triangulate->size() == 0) return std::vector<cv::Vec6f>();
+  if (keypoints_to_triangulate.size() == 0) return std::vector<cv::Vec6f>();
 
   // Rectangle to be used with Subdiv2D.
   // https://answers.opencv.org/question/180984/out-of-range-error-in-delaunay-triangulation/
@@ -1642,11 +1725,12 @@ std::vector<cv::Vec6f> Mesher::createMesh2dImpl(
   // subdiv.swapEdges()
 
   // TODO Luca: there are kpts outside image, probably from tracker. This
-  // check should be in the tracker.
+  // check should be in the tracker. Actually seems to be issue in subdiv...
+  // IT IS OPENCV subdiv that is messing up...
   // -> Make sure we only pass keypoints inside the image!
   KeypointsCV keypoints_inside_image;
-  keypoints_inside_image.reserve(keypoints_to_triangulate->size());
-  for (const KeypointCV& kp : *keypoints_to_triangulate) {
+  keypoints_inside_image.reserve(keypoints_to_triangulate.size());
+  for (const KeypointCV& kp : keypoints_to_triangulate) {
     if (rect.contains(kp)) {
       // TODO(Toni): weirdly enough rect.contains does not quite work with
       // (-0.0 - epsilon) values... it still considers them inside...
@@ -1677,7 +1761,7 @@ std::vector<cv::Vec6f> Mesher::createMesh2dImpl(
                << "Rectangle size (x, y, height, width): " << rect.x << ", "
                << rect.y << ", " << rect.height << ", " << rect.width << '\n'
                << "Keypoints to triangulate: "
-               << keypoints_to_triangulate->size() << '\n'
+               << keypoints_to_triangulate.size() << '\n'
                << "Keypoints inside image: " << keypoints_inside_image.size();
   }
 
@@ -1685,25 +1769,48 @@ std::vector<cv::Vec6f> Mesher::createMesh2dImpl(
   // image
   // TODO I think that the spurious triangles are due to ourselves sending
   // keypoints out of the image... Compute actual triangulation.
-  std::vector<cv::Vec6f> triangulation2D;
-  subdiv.getTriangleList(triangulation2D);
+  std::vector<cv::Vec6f> tri_2d;
+  subdiv.getTriangleList(tri_2d);
+
+  // If requested, also return the unique ids of the vertices of each triangle.
+  // subdiv.locate has a bug, let us just use hashes of vertices...
+  if (vtx_indices) {
+    vtx_indices->clear();
+    vtx_indices->reserve(tri_2d.size());
+  }
 
   // Retrieve "good triangles" (all vertices are inside image).
   std::vector<cv::Vec6f> good_triangulation;
-  good_triangulation.reserve(triangulation2D.size());
-  for (const cv::Vec6f& tri : triangulation2D) {
+  good_triangulation.reserve(tri_2d.size());
+  for (const cv::Vec6f& tri : tri_2d) {
     if (rect.contains(cv::Point2f(tri[0], tri[1])) &&
         rect.contains(cv::Point2f(tri[2], tri[3])) &&
         rect.contains(cv::Point2f(tri[4], tri[5]))) {
       // Triangle with all vertices inside image
       good_triangulation.push_back(tri);
+
+      // Find vertex ids!
+      if (vtx_indices) {
+        TriVtxIndices tri_vtx_indices;
+        // Iterate over each vertex (pixel) of the triangle.
+        for (size_t j = 0u; j < tri.rows / 2u; j++) {
+          // Extract vertex == pixel.
+          const cv::Point2f pixel(tri[j * 2u], tri[j * 2u + 1u]);
+          // Find vertex ids
+          tri_vtx_indices[j] =
+              UtilsNumerical::hashPair(std::make_pair(pixel.x, pixel.y));
+        }
+        vtx_indices->push_back(tri_vtx_indices);
+      }
+
     } else {
-      VLOG(1) << "Delaunay Triangle out of image (size: x: " << rect.x
-                   << ", y: " << rect.y << ", height: " << rect.height
-                   << ", width "<< rect.width << "\n Triangle: x, y: \n"
-                   << tri[0] << ", " << tri[1] << '\n'
-                   << tri[2] << ", " << tri[3] << '\n'
-                   << tri[4] << ", " << tri[5];
+      LOG_EVERY_N(ERROR, 100)
+          << "Delaunay Triangle out of image (size: x: " << rect.x
+          << ", y: " << rect.y << ", height: " << rect.height << ", width "
+          << rect.width << "\n Triangle: x, y: \n"
+          << tri[0] << ", " << tri[1] << '\n'
+          << tri[2] << ", " << tri[3] << '\n'
+          << tri[4] << ", " << tri[5];
     }
   }
   return good_triangulation;
@@ -1735,7 +1842,7 @@ std::vector<cv::Vec6f> Mesher::createMesh2D(
       keypoints_to_triangulate.push_back(keypoint_i);
     }
   }
-  return createMesh2dImpl(frame_size, &keypoints_to_triangulate);
+  return createMesh2dImpl(frame_size, keypoints_to_triangulate);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1744,7 +1851,7 @@ void Mesher::createMesh2dStereo(
     const LandmarkIds& landmarks,
     const std::vector<KeypointStatus>& keypoints_status,
     const KeypointsCV& keypoints,
-    const std::vector<Vector3>& keypoints_3d,
+    const BearingVectors& keypoints_3d,
     const cv::Size& img_size,
     std::vector<std::pair<LandmarkId, gtsam::Point3>>* lmk_with_id_stereo) {
   // triangulation_2D is compulsory, lmk_with_id_stereo is optional.
@@ -1775,7 +1882,7 @@ void Mesher::createMesh2dStereo(
   }
 
   // Get a triangulation for all valid keypoints.
-  *triangulation_2D = createMesh2dImpl(img_size, &keypoints_for_mesh);
+  *triangulation_2D = createMesh2dImpl(img_size, keypoints_for_mesh);
 }
 
 }  // namespace VIO

@@ -43,7 +43,7 @@
 #include <glog/logging.h>
 
 #include "kimera-vio/common/vio_types.h"
-#include "kimera-vio/imu-frontend/ImuFrontEnd-definitions.h"
+#include "kimera-vio/imu-frontend/ImuFrontend-definitions.h"
 
 namespace VIO {
 
@@ -55,8 +55,11 @@ inline void ThreadsafeImuBuffer::addMeasurement(
   // Enforce strict time-wise ordering.
   ImuMeasurement last_value;
   if (buffer_.getNewestValue(&last_value)) {
-    CHECK_GT(timestamp_nanoseconds, last_value.timestamp_)
-        << "Timestamps not strictly increasing.";
+    if (timestamp_nanoseconds <= last_value.timestamp_) {
+      LOG_FIRST_N(WARNING, 1) << "Imu timestamps not strictly increasing";
+      VLOG(10) << "Timestamps not strictly increasing";
+      return;
+    }
   }
   buffer_.addValue(
       timestamp_nanoseconds,

@@ -78,14 +78,14 @@ void VisualInertialFrame::updateDeltaState(const gtsam::NavState &delta_state) {
 // TODO(Sandro): Check conventions
 // TODO(Sandro): Why are we not iterating also the tangent basis?
 // TODO(Sandro): Either retrieve all velocities and poses to insert
-// in the backend optimization or retrieve last pose and velocity
-// so that there is no lag for the backend optimization
+// in the Backend optimization or retrieve last pose and velocity
+// so that there is no lag for the Backend optimization
 
 /* -------------------------------------------------------------------------- */
 // Constructor for visual inertial alignment.
 // [in] estimated camera poses in initial body frame.
 // [in] delta timestamps of camera frames.
-// [in] pre-integrations performed in visual frontend.
+// [in] pre-integrations performed in visual Frontend.
 // [in] global gravity vector in world frame.
 OnlineGravityAlignment::OnlineGravityAlignment(
     const AlignmentPoses &estimated_body_poses,
@@ -93,9 +93,9 @@ OnlineGravityAlignment::OnlineGravityAlignment(
     const AlignmentPims &pims,
     const gtsam::Vector3 &g_world,
     const InitialAHRSPims &ahrs_pims)
-    : estimated_body_poses_(estimated_body_poses),
+    : pims_(pims),
+      estimated_body_poses_(estimated_body_poses),
       delta_t_camera_(delta_t_camera),
-      pims_(pims),
       g_world_(g_world),
       ahrs_pims_(ahrs_pims) {}
 
@@ -139,7 +139,7 @@ bool OnlineGravityAlignment::alignVisualInertialEstimates(
     // Align gravity vectors and estimate initial pose
     gtsam::Rot3 w0_R_b0 =
         UtilsOpenCV::AlignGravityVectors(*g_iter, g_world_, false);
-    gtsam::Pose3 w0_T_b0(w0_R_b0, gtsam::Point3());
+    gtsam::Pose3 w0_T_b0(w0_R_b0, gtsam::Point3::Zero());
     // Create initial navstate and rotate velocity in world frame
     *init_navstate = gtsam::NavState(w0_T_b0 * vi_frames.at(0).b0Tbk(),
                                      w0_T_b0.rotation() * init_velocity);
@@ -162,7 +162,7 @@ bool OnlineGravityAlignment::alignVisualInertialEstimates(
 // It populates the camera poses, delta pre-integrations and jacobian.
 // [in] vector of estimated camera poses from Bundle-Adjustment.
 // [in] vector of delta_t in camera frames.
-// [in] vector of pre-integrations from visual-frontend.
+// [in] vector of pre-integrations from visual-Frontend.
 // [out] vector of frames used for initial alignment.
 void OnlineGravityAlignment::constructVisualInertialFrames(
     const AlignmentPoses &estimated_body_poses,
@@ -175,7 +175,7 @@ void OnlineGravityAlignment::constructVisualInertialFrames(
   vi_frames->clear();
 
   // Create initialization frames
-  for (int i = 0; i < pims.size(); i++) {
+  for (size_t i = 0; i < pims.size(); i++) {
     // Get bk_gamma_bkp1, bk_alpha_bkp1, bk_beta_bkp1
     // pim.deltaXij() corresponds to bodyLkf_X_bodyK_imu
     gtsam::NavState delta_state(pims.at(i)->deltaXij());
@@ -208,7 +208,7 @@ void OnlineGravityAlignment::constructVisualInertialFrames(
 
 /* -------------------------------------------------------------------------- */
 // Estimate gyroscope bias and update delta states in VI frames
-// [in] vector of pre-integrations from visual-frontend.
+// [in] vector of pre-integrations from visual-Frontend.
 // [out] new estimated value for gyroscope bias.
 // [out] frames containing pim constraints and body poses.
 bool OnlineGravityAlignment::estimateBiasAndUpdateStates(
@@ -258,7 +258,7 @@ void OnlineGravityAlignment::estimateGyroscopeBias(
   auto noise = gtsam::noiseModel::Unit::Create(3);
 
   // Loop through all initialization frame
-  for (int i = 0; i < vi_frames.size(); i++) {
+  for (size_t i = 0; i < vi_frames.size(); i++) {
     auto frame_i = std::next(vi_frames.begin(), i);
 
     // Compute rotation error between pre-integrated and visual estimates
@@ -323,7 +323,7 @@ void OnlineGravityAlignment::estimateGyroscopeBiasAHRS(
                                       noise_init_rot));
 
   // Loop through all initialization frames
-  for (int i = 0; i < vi_frames.size(); i++) {
+  for (size_t i = 0; i < vi_frames.size(); i++) {
     auto frame_id = i + 1;
     auto frame_i = std::next(vi_frames.begin(), i);
 
@@ -377,7 +377,7 @@ gtsam::Vector3 OnlineGravityAlignment::estimateGyroscopeResiduals(
     const VisualInertialFrames &vi_frames) {
   gtsam::Vector3 dR(0.0, 0.0, 0.0);
   // Loop through all initialization frame
-  for (int i = 0; i < vi_frames.size(); i++) {
+  for (size_t i = 0; i < vi_frames.size(); i++) {
     auto frame_i = std::next(vi_frames.begin(), i);
     // Compute rotation error between pre-integrated and visual estimates
     gtsam::Rot3 bkp1_error_bkp1(frame_i->bkGammaBkp1().transpose() *
@@ -392,7 +392,7 @@ gtsam::Vector3 OnlineGravityAlignment::estimateGyroscopeResiduals(
 /* -------------------------------------------------------------------------- */
 // Corrects pre-integrated delta states with the gyro bias estimate.
 // It uses a first-order approximation around the gyro bias estimate.
-// [in] vector of pre-integrations from visual-frontend.
+// [in] vector of pre-integrations from visual-Frontend.
 // [in] new estimated value for gyroscope bias.
 // [out] updated vector of frames used for initial alignment.
 void OnlineGravityAlignment::updateDeltaStates(
@@ -403,7 +403,7 @@ void OnlineGravityAlignment::updateDeltaStates(
   CHECK_EQ(vi_frames->size(), pims.size());
 
   // Repropagate measurements with first order approximation
-  for (int i = 0; i < vi_frames->size(); i++) {
+  for (size_t i = 0; i < vi_frames->size(); i++) {
     // Update pre-integration with first-order approximation
     gtsam::Vector9 correct_preintegrated = pims.at(i)->biasCorrectedDelta(
         gtsam::imuBias::ConstantBias(Vector3::Zero(), gyro_bias));
@@ -436,7 +436,7 @@ bool OnlineGravityAlignment::alignEstimatesLinearly(
   auto noise = gtsam::noiseModel::Unit::Create(3);
 
   // Loop through all frames
-  for (int i = 0; i < vi_frames.size(); i++) {
+  for (size_t i = 0; i < vi_frames.size(); i++) {
     auto frame_i = std::next(vi_frames.begin(), i);
 
     // Add binary factor for position constraint
@@ -508,7 +508,9 @@ gtsam::Matrix OnlineGravityAlignment::createTangentBasis(
 
   // Look for b orthogonal to a
   gtsam::Vector3 tmp(0, 0, 1);
-  if (a == tmp) tmp << (1, 0, 0);
+  if (a == tmp) {
+    tmp << 1, 0, 0;
+  }
   b = (tmp - a * (a.transpose() * tmp)).normalized();
 
   // C orthogonal to b and a
@@ -549,7 +551,7 @@ void OnlineGravityAlignment::refineGravity(
     auto noise = gtsam::noiseModel::Unit::Create(3);
 
     // Loop through all frames
-    for (int i = 0; i < vi_frames.size(); i++) {
+    for (size_t i = 0; i < vi_frames.size(); i++) {
       auto frame_i = std::next(vi_frames.begin(), i);
 
       // Apply tangent basis to g (g = g0 + txty*dxdy)

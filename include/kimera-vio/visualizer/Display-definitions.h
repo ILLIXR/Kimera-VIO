@@ -22,12 +22,8 @@
 namespace VIO {
 
 /**
- * @brief The DisplayType enum: enumerates the types of supported renderers.
- */
-enum class DisplayType { kOpenCV = 0 };
-
-/**
  * @brief The WindowData struct: Contains internal data for Visualizer3D window.
+ * This only applies to OpenCV displayers
  */
 struct WindowData {
  public:
@@ -37,9 +33,6 @@ struct WindowData {
  public:
   //! 3D visualization
   cv::viz::Viz3d window_;
-
-  //! Colors
-  cv::viz::Color background_color_;
 
   //! Stores the user set mesh representation.
   //! These objects are further modified by callbacks in the display module
@@ -62,7 +55,7 @@ inline void displayImage(const Timestamp& timestamp,
                          const cv::Mat& img,
                          DisplayQueue* display_queue) {
   DisplayInputBase::UniquePtr visualizer_output =
-      VIO::make_unique<DisplayInputBase>();
+      std::make_unique<DisplayInputBase>();
   visualizer_output->timestamp_ = timestamp;
   ImageToDisplay img_to_display(title, img);
   visualizer_output->images_to_display_.push_back(img_to_display);

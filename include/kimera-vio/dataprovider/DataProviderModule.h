@@ -20,67 +20,44 @@
 
 #pragma once
 
+#include <glog/logging.h>
+
+#include <atomic>
 #include <functional>
 #include <string>
 #include <utility>  // for move
 
-#include <glog/logging.h>
-
-#include "kimera-vio/frontend/StereoImuSyncPacket.h"
-#include "kimera-vio/frontend/StereoMatchingParams.h"
+#include "kimera-vio/frontend/FrontendInputPacketBase.h"
+#include "kimera-vio/frontend/MonoImuSyncPacket.h"
+#include "kimera-vio/frontend/VisionImuFrontend-definitions.h"
 #include "kimera-vio/pipeline/Pipeline-definitions.h"
 #include "kimera-vio/pipeline/PipelineModule.h"
 #include "kimera-vio/utils/Macros.h"
+#include "kimera-vio/utils/ThreadsafeOdometryBuffer.h"
+#include "kimera-vio/utils/UtilsNumerical.h"
 
 namespace VIO {
 
-class DataProviderModule
-    : public MISOPipelineModule<StereoImuSyncPacket, StereoImuSyncPacket> {
+class DataProviderModule : public MISOPipelineModule<FrontendInputPacketBase,
+                                                     FrontendInputPacketBase> {
  public:
   KIMERA_DELETE_COPY_CONSTRUCTORS(DataProviderModule);
   KIMERA_POINTER_TYPEDEFS(DataProviderModule);
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  using VioPipelineCallback =
-      std::function<void(StereoImuSyncPacket::UniquePtr)>;
+  using MISO =
+      MISOPipelineModule<FrontendInputPacketBase, FrontendInputPacketBase>;
+  using OutputQueue = typename MISO::OutputQueue;
+  using PipelineOutputCallback =
+      std::function<void(FrontendInputPacketBase::UniquePtr)>;
 
   DataProviderModule(OutputQueue* output_queue,
                      const std::string& name_id,
-                     const bool& parallel_run,
-                     const StereoMatchingParams& stereo_matching_params);
+                     const bool& parallel_run);
 
   virtual ~DataProviderModule() = default;
 
-  inline OutputUniquePtr spinOnce(
-      StereoImuSyncPacket::UniquePtr input) override {
-    // Called by spin(), which also calls getInputPacket().
-    // Data provider syncs and publishes input sensor information, which
-    // is done at the level of getInputPacket. No other action needed.
-    return input;
-  }
-
   //! Callbacks to fill queues: they should be all lighting fast.
-  inline void fillLeftFrameQueue(Frame::UniquePtr left_frame) {
-    CHECK(left_frame);
-    left_frame_queue_.push(std::move(left_frame));
-  }
-  inline void fillRightFrameQueue(Frame::UniquePtr right_frame) {
-    CHECK(right_frame);
-    right_frame_queue_.push(std::move(right_frame));
-  }
-  //! Callbacks to fill queues but they block if queues are getting full.
-  //! Blocking call in case you want to avoid overfilling the input queues.
-  //! This is useful when parsing datasets files, since parsing is much faster
-  //! than the pipeline. But this is not suitable for online scenarios where
-  //! you should not block the sensor processing.
-  inline void fillLeftFrameQueueBlockingIfFull(Frame::UniquePtr left_frame) {
-    CHECK(left_frame);
-    left_frame_queue_.pushBlockingIfFull(std::move(left_frame), 5u);
-  }
-  inline void fillRightFrameQueueBlockingIfFull(Frame::UniquePtr right_frame) {
-    CHECK(right_frame);
-    right_frame_queue_.pushBlockingIfFull(std::move(right_frame), 5u);
-  }
   //! Fill multiple IMU measurements at once
   inline void fillImuQueue(const ImuMeasurements& imu_measurements) {
     imu_data_.imu_buffer_.addMeasurements(imu_measurements.timestamps_,
@@ -93,11 +70,78 @@ class DataProviderModule
   }
 
   // TODO(Toni): remove, register at ctor level.
-  inline void registerVioPipelineCallback(const VioPipelineCallback& cb) {
+  inline void registerVioPipelineCallback(const PipelineOutputCallback& cb) {
     vio_pipeline_callback_ = cb;
   }
 
+  /**
+   * @brief Push an external odometry measurement into the queue for later
+   * processing
+   * @param timestamp timestamp of measurement
+   * @param odom "tuple" of world_Pose_ext_odom and
+   * ext_odom_world_Vel_ext_odom (i.e. pose of body (odom frame) w.r.t. world and
+   * velocity of the odom frame in the world frame w.r.t. the odom frame)
+   */
+  inline void fillExternalOdometryQueue(const ExternalOdomMeasurement& odom) {
+    if (!external_odometry_buffer_) {
+      // warn hopefully about every second (assuming a range of 30hz-100hz)
+      LOG_EVERY_N(WARNING, 50)
+          << "Attempting to add external odometry when using an external "
+             "odometry source is disabled! Measurements will be ignored";
+      return;
+    }
+    external_odometry_buffer_->add(
+        odom.timestamp_ + external_odometry_time_shift_ns_, odom.odom_data_);
+  }
+
+  /**
+   * @brief Set flag for the DataProvider to perform a coarse timestamp
+   * correction
+   *
+   * This flags tells the DataProvider to find the offset between the latest IMU
+   * measurement and camera frame the next time the data provider gets a frame
+   * and to apply that to all future IMU data. This is only useful if the IMU
+   * is improperly timestamped and has a static offset not related to a physical
+   * delay between the camera and IMU.
+   */
+  inline void doCoarseImuCameraTemporalSync() {
+    do_coarse_imu_camera_temporal_sync_ = true;
+  }
+
+  /**
+   * @brief Set the "fine" timestamp correction between the IMU and Camera
+   *
+   * Either used to apply the estimate of the delay between the IMU and Camera
+   * or to use a manually provided value.
+   */
+  inline void setImuTimeShift(const double& imu_time_shift_s) {
+    imu_time_shift_ns_ = UtilsNumerical::SecToNsec(imu_time_shift_s);
+  }
+
+  /**
+   * @brief Set the "fine" timestamp correction between the External odometry
+   * and Camera
+   *
+   * Apply the estimate of the delay between the external
+   * odometry and Camera.
+   */
+  inline void setExternalOdometryTimeShift(
+      const double& external_odometry_time_shift_s) {
+    external_odometry_time_shift_ns_ =
+        UtilsNumerical::SecToNsec(external_odometry_time_shift_s);
+  }
+
  protected:
+  /**
+   * @brief Preferred step to take with current frame based on IMU status
+   */
+  enum class FrameAction {
+    Drop,  // None of the timestamp invariants check out
+    Wait,  // We need more data to use the frame
+    Use,   // The frame is good, use
+  };
+
+  // THE USER NEEDS TO IMPLEMENT getInputPacket()!
   // Spin the dataset: processes the input data and constructs a Stereo Imu
   // Synchronized Packet (stereo pair + IMU measurements), the minimum data
   // needed for the VIO pipeline to do one processing iteration.
@@ -105,26 +149,38 @@ class DataProviderModule
   // If a stereo pair appears after another stereo pair with no IMU packets in
   // between, it will be discarded.
   // The first valid pair is used as a timing fencepost and is not published.
-  InputUniquePtr getInputPacket() override;
+  virtual MISO::InputUniquePtr getInputPacket() = 0;
+
+  /**
+   * @brief getTimeSyncedImuMeasurements Time synchronizes the IMU buffer
+   * with the given timestamp (this is typically the timestamp of a left img)
+   * @param[in] timestamp Timestamp for the IMU data to query since
+   * timestamp_last_frame_.
+   * @param[out] imu_meas IMU measurements to be populated and returned
+   * @return Preferred action with frame
+   */
+  FrameAction getTimeSyncedImuMeasurements(const Timestamp& timestamp,
+                                           ImuMeasurements* imu_meas);
+
+  void logQueryResult(const Timestamp& timestamp,
+                      utils::ThreadsafeImuBuffer::QueryResult result) const;
 
   //! Called when general shutdown of PipelineModule is triggered.
-  void shutdownQueues() override;
+  virtual void shutdownQueues();
 
-  //! Checks if the module has work to do (should check input queues are empty)
-  inline bool hasWork() const override {
-    return !left_frame_queue_.empty() || !right_frame_queue_.empty();
-  }
-
- private:
+ protected:
+  static const Timestamp InvalidTimestamp = 0;
   //! Input data
   ImuData imu_data_;
-  ThreadsafeQueue<Frame::UniquePtr> left_frame_queue_;
-  ThreadsafeQueue<Frame::UniquePtr> right_frame_queue_;
-  const Timestamp kNoFrameYet = 0;
+  bool repeated_frame_;
   Timestamp timestamp_last_frame_;
-  // TODO(Toni): remove these below
-  StereoMatchingParams stereo_matching_params_;
-  VioPipelineCallback vio_pipeline_callback_;
-};
+  bool do_coarse_imu_camera_temporal_sync_;
+  Timestamp imu_timestamp_correction_;
+  std::atomic<Timestamp> imu_time_shift_ns_;  // t_imu = t_cam + imu_shift
+  std::atomic<Timestamp> external_odometry_time_shift_ns_;
+  PipelineOutputCallback vio_pipeline_callback_;
+  //! External odometry source
+  ThreadsafeOdometryBuffer::UniquePtr external_odometry_buffer_;
+};  // namespace VIO
 
 }  // namespace VIO
