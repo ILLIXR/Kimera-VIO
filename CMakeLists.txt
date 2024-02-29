@@ -1,10 +1,6 @@
 cmake_minimum_required (VERSION 3.5)
 project(kimera_vio VERSION 1.0 LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 # ILLIXR requires C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(GFLAGS_PREFER_EXPORTED_GFLAGS_CMAKE_CONFIGURATION TRUE)
 set(GLOG_PREFER_EXPORTED_GLOG_CMAKE_CONFIGURATION TRUE)
 list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_SOURCE_DIR}/cmake)
+list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_INSTALL_PREFIX}/lib/cmake)
+
+link_directories(BEFORE ${CMAKE_INSTALL_DIR}/lib)
 
 IF(APPLE)
     # Fix linking on 10.14+. See https://stackoverflow.com/questions/54068035
@@ -32,14 +31,8 @@ find_package(Glog 0.3.5 REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(GTSAM_UNSTABLE QUIET)
 find_package(opengv REQUIRED)
-find_package(OpenCV REQUIRED EXACT 3.4.6)
+find_package(OpenCV REQUIRED)
 find_package(DBoW2 REQUIRED)
-if(NOT TARGET DBoW2::DBoW2)
-  add_library(DBoW2::DBoW2 INTERFACE IMPORTED)
-  set_target_properties(DBoW2::DBoW2 PROPERTIES
-  INTERFACE_LINK_LIBRARIES "${DBoW2_LIBRARIES}"
-  INTERFACE_INCLUDE_DIRECTORIES "${DBoW2_INCLUDE_DIRS}")
-endif()
 find_package(KimeraRPGO REQUIRED)
 # Pangolin is optional
 find_package(Pangolin QUIET)
@@ -131,10 +124,10 @@ add_subdirectory(src/visualizer)
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     opengv
-    DBoW2::DBoW2
     KimeraRPGO
     triangle::triangle
   PUBLIC
+    ${DBoW2_LIBRARIES}
     ${OpenCV_LIBRARIES}
     ${GFLAGS_LIBRARIES}
     ${GLOG_LIBRARIES}
@@ -179,9 +172,9 @@ add_library(kimera_vio::kimera_vio ALIAS kimera_vio)
 add_executable(stereoVIOEuroc ./examples/KimeraVIO.cpp)
 target_link_libraries(stereoVIOEuroc PUBLIC kimera_vio::kimera_vio)
 
-add_library(plugin SHARED ./examples/plugin.cpp)
-target_include_directories(plugin PRIVATE ./common)
-target_link_libraries(plugin PUBLIC kimera_vio::kimera_vio)
+add_library(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} SHARED examples/plugin.cpp)
+target_include_directories(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PRIVATE ${ILLIXR_ROOT})
+target_link_libraries(plugin.kimera_vio${ILLIXR_BUILD_SUFFIX} PUBLIC kimera_vio::kimera_vio)
 
 ############################### TESTS ##########################################
 ### Add testing
